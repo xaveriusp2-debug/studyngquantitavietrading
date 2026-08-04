@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # ==========================================
 # 1. DESIGN SYSTEM: MINIMALIST + WATERMARK XPINONTOAN + ZERO FLICKER
 # ==========================================
-st.set_page_config(page_title="Pro Quant Terminal — High-Frequency Live", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Pro Quant Terminal — 15s Live", layout="wide", page_icon="⚡")
 
 st.markdown("""
 <style>
@@ -175,7 +175,7 @@ st.markdown("""
 <div class="watermark-fixed">⚡ DESIGNED BY XPINONTOAN</div>
 """, unsafe_allow_html=True)
 
-# SESSION STATE MANAGEMENT FOR SCREENER SCAN LOCK
+# SESSION STATE INITIALIZATION FOR STABILITY
 if 'is_scanning' not in st.session_state:
     st.session_state['is_scanning'] = False
 if 'live_signals' not in st.session_state:
@@ -183,9 +183,9 @@ if 'live_signals' not in st.session_state:
 if 'ml_leaderboard' not in st.session_state:
     st.session_state['ml_leaderboard'] = pd.DataFrame()
 
-# AUTO-PAUSE REFRESH DURING MARKET SCAN
+# AUTO-REFRESH EXACTLY EVERY 15 SECONDS (PAUSED DURING ACTIVE SCREENER SCAN)
 if not st.session_state['is_scanning']:
-    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v141")
+    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v142")
 else:
     refresh_count = 0
 
@@ -234,9 +234,9 @@ def save_journal(df):
 df_journal = load_journal()
 
 # ==========================================
-# 2. REAL-TIME MACRO & KURS CONNECTOR
+# 2. REAL-TIME MACRO & KURS CONNECTOR (15s TTL)
 # ==========================================
-@st.cache_data(ttl=5, show_spinner=False)
+@st.cache_data(ttl=15, show_spinner=False)
 def fetch_realtime_macro_stream():
     bi_rate = 6.00
     inflation = 2.51
@@ -261,7 +261,7 @@ def fetch_realtime_macro_stream():
                 usd_idr_prev = float(close_s.iloc[0])
                 usd_idr_change = ((usd_idr_last - usd_idr_prev) / usd_idr_prev) * 100 if usd_idr_prev > 0 else 0.0
     except Exception as e:
-        logging.exception("Real-time HFT USD/IDR error: %s", e)
+        logging.exception("Real-time USD/IDR error: %s", e)
         
     try:
         t_coal = yf.Ticker("XLE")
@@ -269,7 +269,7 @@ def fetch_realtime_macro_stream():
         if 'lastPrice' in fast_c and fast_c['lastPrice'] > 0:
             coal_price = float(fast_c['lastPrice'])
     except Exception as e:
-        logging.exception("Real-time HFT Coal error: %s", e)
+        logging.exception("Real-time Coal error: %s", e)
     
     macro_score = 50
     try:
@@ -298,7 +298,7 @@ def fetch_realtime_macro_stream():
         'bi_rate': bi_rate, 'inflation': inflation, 'usd_idr': usd_idr_last,
         'usd_change_%': usd_idr_change, 'coal_price': coal_price, 'cpo_price': cpo_price,
         'macro_score': macro_score, 'risk_status': risk_status, 'risk_summary': risk_summary,
-        'last_tick_time': datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        'last_tick_time': datetime.now().strftime('%H:%M:%S')
     }
 
 # ==========================================
@@ -383,9 +383,9 @@ def run_adaptive_quant_engine():
 
 WATCHLIST_1M = ['BBCA.JK', 'BMRI.JK', 'BBRI.JK', 'TLKM.JK', 'ASII.JK', 'GOTO.JK', 'AMMN.JK', 'BREN.JK', 'BRPT.JK']
 
-@st.cache_data(ttl=60, show_spinner=False) 
+@st.cache_data(ttl=15, show_spinner=False) 
 def pull_live_data(tickers):
-    """Fungsi Penarik Data Real-Time Asinkron untuk Dasbor Utama"""
+    """Fungsi Penarik Data Real-Time Asinkron untuk Dasbor Utama (15 Detik TTL)"""
     market_data = []
     
     try:
@@ -501,6 +501,47 @@ def train_xgboost_model(ticker, period="5y"):
     except Exception as e:
         logging.exception("Train XGBoost error for %s: %s", ticker, e)
         return None, None, 0.0, 0.0
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def massive_ml_ranking(tickers, top_limit=60):
+    ml_results = []
+    chunk_size = 50
+    chunks = [tickers[i:i + chunk_size] for i in range(0, min(len(tickers), top_limit * 2), chunk_size)]
+    
+    for chunk in chunks:
+        try:
+            bulk_data = yf.download(chunk, period="2y", group_by='ticker', threads=True, progress=False)
+            for ticker in chunk:
+                try:
+                    df = bulk_data[ticker].dropna(subset=['Close']) if len(chunk) > 1 and isinstance(bulk_data.columns, pd.MultiIndex) else bulk_data.dropna(subset=['Close'])
+                    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+                    if len(df) < 80: continue
+                        
+                    df = inject_advanced_indicators(df)
+                    close_s = df['Close'].squeeze()
+                    df['Target'] = ((close_s.shift(-5) / close_s - 1) > 0.03).astype(int)
+                    df.replace([np.inf, -np.inf], np.nan, inplace=True)
+                    df.dropna(inplace=True)
+                    
+                    feature_cols = ['Return_1d', 'Return_3d', 'Return_5d', 'Return_10d', 'Return_20d', 'Vol_5d', 'Vol_20d', 'Volume_Ratio', 'Dist_SMA20', 'Dist_SMA50', 'RSI_14', 'ATR_Ratio']
+                    X, y = df[feature_cols].copy(), df['Target'].copy()
+                    if len(X) < 40: continue
+                        
+                    split = int(len(X) * 0.8)
+                    model = xgb.XGBClassifier(n_estimators=60, learning_rate=0.08, max_depth=3, subsample=0.8, random_state=42, eval_metric='logloss')
+                    model.fit(X.iloc[:split], y.iloc[:split])
+                    acc = accuracy_score(y.iloc[split:], model.predict(X.iloc[split:])) if split < len(X) else 0.0
+                    prob_buy = float(model.predict_proba(X.iloc[[-1]])[0][1]) * 100 if len(X) >= 1 else 0.0
+                    
+                    ml_results.append({'Ticker': ticker, 'Harga (Rp)': round(float(close_s.iloc[-1]), 0), 'Win Prob ML (%)': f"{prob_buy:.1f}%", 'Akurasi Model': f"{acc*100:.1f}%", '_raw_prob': prob_buy})
+                except Exception: continue
+        except Exception: pass
+            
+    res_df = pd.DataFrame(ml_results)
+    if not res_df.empty:
+        res_df = res_df.sort_values(by='_raw_prob', ascending=False).drop(columns=['_raw_prob']).reset_index(drop=True)
+        res_df.index = res_df.index + 1
+    return res_df
 
 def get_macro_micro_explanation(ticker, last_close, macro_info):
     coal_tickers = ['PTBA.JK', 'ADRO.JK', 'ITMG.JK', 'HRUM.JK', 'UNTR.JK']
@@ -698,7 +739,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-status_text = "PEMINDAIAN PASAR AKTIF (REFRESH DAHALIKAN)" if st.session_state['is_scanning'] else f"SEAMLESS BACKGROUND STREAMING | TICK: {macro_info['last_tick_time']} | REFRESH #{refresh_count}"
+status_text = "PEMINDAIAN PASAR AKTIF (REFRESH PAUSED)" if st.session_state['is_scanning'] else f"STREAMING REAL-TIME (15s) | TICK: {macro_info['last_tick_time']} | SIKLUS #{refresh_count}"
 
 st.caption(f"<span class='live-pulse-hft'></span> <b>STATUS REAL-TIME MARKET SERVER:</b> {status_text} | REZIM HMM: {hmm_label} ({adaptive_config.get('Mode', 'NETRAL')})", unsafe_allow_html=True)
 
@@ -825,7 +866,7 @@ with tab3:
         df_table = df_display.drop(columns=['_raw_df'])
         col1, col2 = st.columns([1.2, 1.8])
         with col1:
-            st.subheader("📊 Radar Order Flow Intraday (High-Frequency Stream)")
+            st.subheader("📊 Radar Order Flow Intraday (High-Frequency Stream 15s)")
             st.dataframe(df_table, use_container_width=True, hide_index=True)
         with col2:
             st.subheader("📈 Grafik Intraday 1-Menit Live Stream")
@@ -892,7 +933,7 @@ with tab5:
     if not df_open.empty:
         col_p1, col_p2 = st.columns([3, 1])
         with col_p1:
-            st.caption(f"<span class='live-pulse-hft'></span> <b>Harga Live & Floating PnL ter-stream secara REAL-TIME PER-DETIK dari Bursa (Tick: {macro_info['last_tick_time']}):</b>", unsafe_allow_html=True)
+            st.caption(f"<span class='live-pulse-hft'></span> <b>Harga Live & Floating PnL ter-stream secara REAL-TIME SETIAP 15 DETIK dari Bursa (Tick: {macro_info['last_tick_time']}):</b>", unsafe_allow_html=True)
             st.dataframe(df_open[['ID', 'Tanggal Entry', 'Ticker', 'Harga Entry', 'Harga Closing/Exit', 'Target TP', 'Stop Loss', 'Volume', 'PnL (Rp)']], use_container_width=True, hide_index=True)
         with col_p2:
             st.markdown('<div class="mini-card">', unsafe_allow_html=True)
@@ -915,4 +956,4 @@ with tab5:
         st.info("Jurnal transaksi tertutup bersih.")
 
 st.markdown("---")
-st.caption("⚡ **PRO QUANT TERMINAL v14.1 — SCANNER PRIORITY LOCK & AUTO-PAUSE REFRESH EDITION BY XPINONTOAN QUANT DESK.**")
+st.caption("⚡ **PRO QUANT TERMINAL v14.2 — 15S LIVE STREAMING & UNIVERSAL FEATURE ENGINE BY XPINONTOAN QUANT DESK.**")
