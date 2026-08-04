@@ -21,33 +21,40 @@ import time
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 # ==========================================
-# 1. DESIGN SYSTEM: MINIMALIST + WATERMARK XPINONTOAN + SEAMLESS REFRESH
+# 1. DESIGN SYSTEM: MINIMALIST + WATERMARK XPINONTOAN + ZERO FLICKER
 # ==========================================
 st.set_page_config(page_title="Pro Quant Terminal — High-Frequency Live", layout="wide", page_icon="⚡")
 
-# Auto-refresh cycle set to 5 seconds per tick for live per-second feel
-refresh_count = st_autorefresh(interval=5 * 1000, limit=None, key="hft_seamless_v136")
-
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
-
-    /* SEAMLESS BACKGROUND REFRESH — NO SCREEN DIMMING OR FLICKER */
-    .stApp, .main, div[data-testid="stAppViewContainer"], div[data-testid="stAppViewBlockContainer"] {
+    /* ULTIMATE ZERO-DIMMING & ZERO-FLICKER ENGINE */
+    html, body, .stApp, .main, 
+    div[data-testid="stAppViewContainer"], 
+    div[data-testid="stAppViewBlockContainer"],
+    div[data-testid="stVerticalBlock"], 
+    .stElementContainer, 
+    div[data-test-script-state="running"],
+    div[data-st-mode="running"] {
         background-color: #0F172A !important;
         color: #F8FAFC !important;
         font-family: 'Inter', sans-serif !important;
         opacity: 1 !important;
         filter: none !important;
         transition: none !important;
+        animation: none !important;
+        pointer-events: auto !important;
     }
 
-    /* HIDE STREAMLIT RE-RUN DIMMING OVERLAY & SPINNER FLICKER */
-    div[data-test-script-state="running"], div[data-st-mode="running"], .stApp [data-testid="stStatusWidget"] {
-        opacity: 1 !important;
-        filter: none !important;
-        visibility: hidden !important;
+    /* COMPLETE SUPPRESSION OF STREAMLIT RUNNING OVERLAYS & SPINNERS */
+    div[data-testid="stStatusWidget"],
+    div[data-testid="stNotification"],
+    .stSpinner,
+    iframe[title="streamlit_autorefresh.st_autorefresh"] {
         display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        height: 0px !important;
+        width: 0px !important;
     }
 
     .stApp header { background: rgba(15, 23, 42, 0.9) !important; border-bottom: 1px solid #1E293B !important; }
@@ -157,6 +164,9 @@ st.markdown("""
 
 <div class="watermark-fixed">⚡ DESIGNED BY XPINONTOAN</div>
 """, unsafe_allow_html=True)
+
+# Smooth refresh cycle set to 15 seconds to prevent browser lockup
+refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="seamless_hft_v137")
 
 JOURNAL_FILE = 'trade_journal_v5.csv'
 
@@ -700,7 +710,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-st.caption(f"<span class='live-pulse-hft'></span> <b>STATUS REAL-TIME MARKET SERVER:</b> SEAMLESS BACKGROUND STREAMING (5S) | TICK: {macro_info['last_tick_time']} | SIKLUS REFRESH #{refresh_count} | REZIM HMM: {hmm_label} ({adaptive_config.get('Mode', 'NETRAL')})", unsafe_allow_html=True)
+st.caption(f"<span class='live-pulse-hft'></span> <b>STATUS REAL-TIME MARKET SERVER:</b> SEAMLESS BACKGROUND STREAMING | TICK: {macro_info['last_tick_time']} | SIKLUS REFRESH #{refresh_count} | REZIM HMM: {hmm_label} ({adaptive_config.get('Mode', 'NETRAL')})", unsafe_allow_html=True)
 
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("USD / IDR (LIVE TICK)", f"Rp {macro_info['usd_idr']:,.2f}", delta=f"{macro_info['usd_change_%']:.2f}%", delta_color="inverse")
@@ -894,4 +904,4 @@ with tab5:
         st.info("Jurnal transaksi tertutup bersih.")
 
 st.markdown("---")
-st.caption("⚡ **PRO QUANT TERMINAL v13.6 — SEAMLESS BACKGROUND LIVE STREAMING EDITION BY XPINONTOAN QUANT DESK.**")
+st.caption("⚡ **PRO QUANT TERMINAL v13.7 — ZERO-DIMMING SEAMLESS LIVE EDITION BY XPINONTOAN QUANT DESK.**")
