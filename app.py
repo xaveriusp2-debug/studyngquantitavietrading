@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # ==========================================
 # 1. DESIGN SYSTEM: MINIMALIST + WATERMARK XPINONTOAN + ZERO FLICKER
 # ==========================================
-st.set_page_config(page_title="Pro Quant Terminal — Clean Institutional Desk", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Pro Quant Terminal — Wall Street Evaluation Desk", layout="wide", page_icon="⚡")
 
 st.markdown("""
 <style>
@@ -127,22 +127,22 @@ st.markdown("""
         background: rgba(30, 41, 59, 0.6);
         border: 1px solid #334155;
         border-radius: 10px;
-        padding: 16px 20px;
-        margin-bottom: 12px;
+        padding: 18px 22px;
+        margin-bottom: 14px;
     }
 
     .eval-pill-title {
         color: #38BDF8;
-        font-size: 0.95rem;
+        font-size: 0.98rem;
         font-weight: 700;
-        margin-bottom: 6px;
+        margin-bottom: 8px;
         letter-spacing: 0.02em;
     }
 
     .eval-pill-body {
         color: #E2E8F0;
-        font-size: 0.88rem;
-        line-height: 1.65;
+        font-size: 0.89rem;
+        line-height: 1.7;
         margin: 0;
     }
 
@@ -275,7 +275,7 @@ if 'rebalance_logs' not in st.session_state:
 
 # AUTO-REFRESH EXACTLY EVERY 15 SECONDS (PAUSED DURING ACTIVE SCREENER SCAN)
 if not st.session_state['is_scanning']:
-    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v210")
+    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v220")
 else:
     refresh_count = 0
 
@@ -362,7 +362,6 @@ def reset_closed_trades_journal():
     ])
     save_journal(df_open_only)
     
-    # Also reset daily snapshots history if desired
     df_empty_snap = pd.DataFrame(columns=[
         'Tanggal Snapshot', 'Waktu Snapshot', 'Total Modal (Rp)', 'Total Floating PnL (Rp)', 
         'Floating Return (%)', 'Jumlah Posisi Open', 'Skor Makro', 'Rezim Pasar HMM', 'Evaluasi Trader Institusi'
@@ -591,16 +590,11 @@ class PerfectAutoRebalancer:
         self.execution_logs = []
 
     def phase_1_macro_allocation(self):
-        """Phase 1: Menentukan porsi KAS vs SAHAM berbasis HMM Market Regime"""
-        if "BEARISH" in self.regime_label:
-            return 0.20
-        elif "SIDEWAYS" in self.regime_label:
-            return 0.50
-        else:
-            return 0.90
+        if "BEARISH" in self.regime_label: return 0.20
+        elif "SIDEWAYS" in self.regime_label: return 0.50
+        else: return 0.90
 
     def phase_2_stock_selection(self, universe_tickers):
-        """Phase 2: XGBoost + OBV mencari Top 5 saham dengan probabilitas > 70%"""
         scanner_results = run_screener_engine_full(self.equity, universe_tickers, self.macro_info, {'Multiplier': 1.0})
         if not scanner_results.empty:
             top_5 = scanner_results.head(5).to_dict('records')
@@ -608,7 +602,6 @@ class PerfectAutoRebalancer:
         return []
 
     def phase_3_risk_sizing(self, top_stocks, max_equity_allowed):
-        """Phase 3: Half-Kelly Criterion & Dynamic ATR Stop Loss Calculation"""
         allocations = {}
         if not top_stocks: return
         
@@ -634,7 +627,6 @@ class PerfectAutoRebalancer:
         self.target_weights = allocations
 
     def phase_4_vwap_execution(self, df_j):
-        """Phase 4: Eksekusi Rebalancing Portofolio Berbasis Filter VWAP"""
         self.execution_logs.append("[AUTO-REBALANCING INITIATED]")
         df_open = df_j[df_j['Status'] == 'OPEN'].copy() if not df_j.empty else pd.DataFrame()
         
@@ -989,7 +981,7 @@ def aggregate_compounding_average(df_open):
     res_df = pd.DataFrame(aggregated_rows)
     return res_df
 
-# RENDER KARTU EVALUASI INSTITUSI CLEAN TANPA SIMBOL
+# RENDER KARTU EVALUASI INSTITUSI WALL STREET GRADE (CLEAN TANPA ASTERIS & BULLET)
 def render_institutional_evaluation_card(df_open_agg, macro_info, regime_label):
     clean_regime = regime_label.replace("🟢", "").replace("🔴", "").replace("🟡", "").strip()
     
@@ -1000,7 +992,7 @@ def render_institutional_evaluation_card(df_open_agg, macro_info, regime_label):
         num_positions = 0
         best_str = "Tidak ada posisi aktif"
         worst_str = "Tidak ada posisi aktif"
-        risk_level = "Kerugian 0 Persen (DanaUtama di Kas)"
+        risk_level = "Konservatif Penuh di Kas"
     else:
         tot_capital = float(df_open_agg['Total Modal (Rp)'].sum())
         tot_pnl_rp = float(df_open_agg['PnL (Rp)'].sum())
@@ -1012,7 +1004,7 @@ def render_institutional_evaluation_card(df_open_agg, macro_info, regime_label):
         
         best_str = f"{best_pos['Ticker']} ({best_pos['PnL (%)']:+.2f}%)"
         worst_str = f"{worst_pos['Ticker']} ({worst_pos['PnL (%)']:+.2f}%)"
-        risk_level = "Rendah (Optimis)" if tot_return_pct >= 0 else "Moderat (Perlu Rebalancing)"
+        risk_level = "Terukur dan Optimis" if tot_return_pct >= 0 else "Diperlukan Rebalancing"
 
     html_code = f"""
     <div class="institutional-eval-container">
@@ -1021,38 +1013,41 @@ def render_institutional_evaluation_card(df_open_agg, macro_info, regime_label):
                 LAPORAN EVALUASI HARIAN PENUTUPAN BURSA
             </h3>
             <span style="background: rgba(16, 185, 129, 0.15); color: #34D399; padding: 4px 14px; border-radius: 20px; font-size: 0.78rem; font-weight: 600; border: 1px solid rgba(16, 185, 129, 0.3);">
-                Desk Institusi Xpinontoan
+                Analisis Kuantitatif Institusi Wall Street
             </span>
         </div>
 
         <div class="eval-badge-row">
             <div class="eval-badge">Floating Return: {tot_return_pct:+.2f}%</div>
             <div class="eval-badge">Profil Risiko: {risk_level}</div>
-            <div class="eval-badge">Top Performer: {best_str}</div>
+            <div class="eval-badge">Top Alpha Performer: {best_str}</div>
             <div class="eval-badge">Under Monitoring: {worst_str}</div>
         </div>
 
         <div class="eval-pill-box">
-            <div class="eval-pill-title">Ringkasan Kinerja Penutupan Bursa dan Modal</div>
+            <div class="eval-pill-title">Evaluasi Kinerja Portofolio dan Manajemen Kapital</div>
             <p class="eval-pill-body">
-                Portofolio saat ini mengelola {num_positions} posisi aktif ter-average secara compounding dengan total modal terpakai sebesar Rp {tot_capital:,.0f}. 
-                Hasil penutupan harian mencatatkan keuntungan floating bersih sebesar Rp {tot_pnl_rp:,.0f} atau setara {tot_return_pct:+.2f}% dari total kapital. 
-                Seluruh batas risiko Stop Loss 2x ATR dan target Take Profit 2x Risk berada dalam pengawalan sistem otomatis.
+                Berdasarkan Teori Portofolio Modern Markowitz dan prinsip pengembalian berbobot risiko Sharpe Ratio, portofolio saat ini mengelola {num_positions} instrumen saham aktif yang terkonsolidasi melalui metode Compounding Average dengan total modal terpakai sebesar Rp {tot_capital:,.0f}. 
+                Penutupan sesi perdagangan mencatatkan imbal hasil floating bersih sebesar Rp {tot_pnl_rp:,.0f} atau setara {tot_return_pct:+.2f}% terhadap total kapitalisasi yang dialokasikan. 
+                Seluruh parameter risiko dikendalikan secara otomatis menggunakan formulasi volatilitas ATR dua kali lipat untuk proteksi modal dari penurunan ekstrim.
             </p>
         </div>
 
         <div class="eval-pill-box">
-            <div class="eval-pill-title">Sintesis Makro Ekonomi dan Rezim Pasar ({clean_regime})</div>
+            <div class="eval-pill-title">Interpretasi Makro Ekonomi dan Teori Portofolio Modern</div>
             <p class="eval-pill-body">
-                Kombinasi skor makro terintegrasi sebesar {macro_info['macro_score']} dari 100, ditambah harga acuan batu bara Newcastle sebesar {macro_info['coal_price']:.2f} USD per ton, dan CPO Malaysia sebesar {macro_info['cpo_price']:.2f} MYR per ton mengindikasikan ketahanan portofolio yang selaras dengan komoditas utama. 
-                Nilai tukar Rupiah ter-stream pada level Rp {macro_info['usd_idr']:,.2f} per Dolar AS, menjaga stabilitas arus modal institusi secara real-time.
+                Mengacu pada Model Perubahan Rezim Hamilton dan Teori Penetapan Harga Aset Arbitrase, skor kondisi makro berada pada level {macro_info['macro_score']} dari 100 dalam rezim pasar {clean_regime}. 
+                Dukungan fundamental terlihat dari stabilitas harga komoditas Newcastle Coal pada level {macro_info['coal_price']:.2f} USD per ton dan CPO Malaysia pada level {macro_info['cpo_price']:.2f} MYR per ton. 
+                Nilai tukar Rupiah berada pada level Rp {macro_info['usd_idr']:,.2f} per Dolar AS, yang menurut teori arus modal internasional memberikan fondasi yang kuat bagi ketersediaan likuiditas institusional di pasar domestik.
             </p>
         </div>
 
         <div class="eval-pill-box" style="margin-bottom: 0;">
-            <div class="eval-pill-title">Rekomendasi Eksekusi dan Rencana Pembukaan Bursa Besok</div>
+            <div class="eval-pill-title">Solusi Strategis dan Rekomendasi Eksekusi Pembukaan Bursa</div>
             <p class="eval-pill-body">
-                Instruksi Trader Senior: Pertahankan seluruh posisi compounding terbuka dengan kedisiplinan pada trailing stop. Tidak ada kebutuhan mendesak untuk melakukan pemangkasan posisi karena tidak ada parameter risiko yang terlampaui. Alokasi modal baru disarankan dilakukan besok pagi setelah penyesuaian sesi pembukaan bursa.
+                Sesuai dengan kriteria ukuran posisi Half-Kelly dan prinsip eksekusi micro-structure pasar, strategi terbaik untuk sesi pembukaan esok hari adalah mempertahankan seluruh posisi compounding aktif dengan pengawasan trailing stop yang ketat. 
+                Sistem tidak mendeteksi adanya keharusan ликвиdasi darurat karena tidak ada ambang batas risiko yang terlewati. 
+                Penambahan alokasi modal baru disarankan untuk dieksekusi menggunakan algoritma VWAP Sniper setelah fase pembentukan harga pre-opening selesai.
             </p>
         </div>
     </div>
@@ -1196,7 +1191,6 @@ with tab1:
         if scan_button:
             st.session_state['is_scanning'] = True
             
-            # ANIMATED ENGAGING CYAN RADAR LOADER
             loader_placeholder = st.empty()
             loader_placeholder.markdown("""
             <div class="custom-loader-card">
@@ -1497,7 +1491,7 @@ with tab5:
         
     st.markdown("---")
     
-    # RENDER EXECUTIVE INSTITUTIONAL EVALUATION CARD (SUPER CLEAN & NO SYMBOLS)
+    # RENDER EXECUTIVE INSTITUTIONAL EVALUATION CARD (WALL STREET GRADE - CLEAN NO SYMBOLS)
     render_institutional_evaluation_card(df_open_agg, macro_info, hmm_label)
     
     col_sn1, col_sn2 = st.columns([1.5, 3])
@@ -1547,4 +1541,4 @@ with tab5:
         st.info("Jurnal transaksi tertutup bersih. Win Rate Historis: 0%")
 
 st.markdown("---")
-st.caption("⚡ **PRO QUANT TERMINAL v21.0 — CLEAN NARRATIVE & ENGAGING LOADER DESK BY XPINONTOAN QUANT DESK.**")
+st.caption("⚡ **PRO QUANT TERMINAL v22.0 — WALL STREET QUANTITATIVE EVALUATION DESK BY XPINONTOAN QUANT DESK.**")
