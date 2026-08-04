@@ -21,18 +21,35 @@ import time
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 # ==========================================
-# 1. DESIGN SYSTEM: MINIMALIST + WATERMARK XPINONTOAN
+# 1. DESIGN SYSTEM: MINIMALIST + WATERMARK XPINONTOAN + SEAMLESS REFRESH
 # ==========================================
 st.set_page_config(page_title="Pro Quant Terminal — High-Frequency Live", layout="wide", page_icon="⚡")
 
-# Ultra High-Frequency Auto-Refresh (Set to 5 seconds per tick for live per-second feel)
-refresh_count = st_autorefresh(interval=5 * 1000, limit=None, key="hft_live_v135")
+# Auto-refresh cycle set to 5 seconds per tick for live per-second feel
+refresh_count = st_autorefresh(interval=5 * 1000, limit=None, key="hft_seamless_v136")
 
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
 
-    .main { background-color: #0F172A !important; color: #F8FAFC !important; font-family: 'Inter', sans-serif !important; }
+    /* SEAMLESS BACKGROUND REFRESH — NO SCREEN DIMMING OR FLICKER */
+    .stApp, .main, div[data-testid="stAppViewContainer"], div[data-testid="stAppViewBlockContainer"] {
+        background-color: #0F172A !important;
+        color: #F8FAFC !important;
+        font-family: 'Inter', sans-serif !important;
+        opacity: 1 !important;
+        filter: none !important;
+        transition: none !important;
+    }
+
+    /* HIDE STREAMLIT RE-RUN DIMMING OVERLAY & SPINNER FLICKER */
+    div[data-test-script-state="running"], div[data-st-mode="running"], .stApp [data-testid="stStatusWidget"] {
+        opacity: 1 !important;
+        filter: none !important;
+        visibility: hidden !important;
+        display: none !important;
+    }
+
     .stApp header { background: rgba(15, 23, 42, 0.9) !important; border-bottom: 1px solid #1E293B !important; }
     
     .mini-card {
@@ -193,7 +210,6 @@ if 'ml_leaderboard' not in st.session_state:
 # ==========================================
 # 2. ULTRA HIGH-FREQUENCY REAL-TIME MACRO & KURS CONNECTOR
 # ==========================================
-# TTL set to 5 seconds for zero-lag streaming
 @st.cache_data(ttl=5, show_spinner=False)
 def fetch_realtime_macro_stream():
     bi_rate = 6.00
@@ -203,7 +219,6 @@ def fetch_realtime_macro_stream():
     coal_price = 58.91
     cpo_price = 3.93
     
-    # 1. KURS USD/IDR LIVE PER-SECOND FEED
     try:
         t_usd = yf.Ticker("IDR=X")
         fast_usd = getattr(t_usd, 'fast_info', {})
@@ -222,7 +237,6 @@ def fetch_realtime_macro_stream():
     except Exception as e:
         logging.exception("Real-time HFT USD/IDR error: %s", e)
         
-    # 2. KOMODITAS NEWCASTLE COAL & CPO LIVE TICKERS
     try:
         t_coal = yf.Ticker("XLE")
         fast_c = getattr(t_coal, 'fast_info', {})
@@ -377,7 +391,6 @@ def pull_live_data(tickers):
                 current_price = float(close_s.iloc[-1])
                 open_price = float(open_s.iloc[0])
                 
-                # Fetch fast_info for absolute sub-second live price tick override
                 try:
                     t_fast = yf.Ticker(ticker)
                     fast = getattr(t_fast, 'fast_info', {})
@@ -544,8 +557,7 @@ def train_xgboost_model(ticker, period="3y"):
         acc = accuracy_score(y.iloc[split:], model.predict(X.iloc[split:])) if split < len(X) else 0.0
         prob_buy = float(model.predict_proba(X.iloc[[-1]])[0][1]) * 100 if len(X) >= 1 else 0.0
         return model, feature_cols, acc, prob_buy
-    except Exception as e:
-        return None, None, 0.0, 0.0
+    except Exception: return None, None, 0.0, 0.0
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def massive_ml_ranking(tickers, top_limit=60):
@@ -688,7 +700,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-st.caption(f"<span class='live-pulse-hft'></span> <b>STATUS REAL-TIME MARKET SERVER:</b> HIGH-FREQUENCY STREAMING (5S) | TICK: {macro_info['last_tick_time']} | SIKLUS REFRESH #{refresh_count} | REZIM HMM: {hmm_label} ({adaptive_config.get('Mode', 'NETRAL')})", unsafe_allow_html=True)
+st.caption(f"<span class='live-pulse-hft'></span> <b>STATUS REAL-TIME MARKET SERVER:</b> SEAMLESS BACKGROUND STREAMING (5S) | TICK: {macro_info['last_tick_time']} | SIKLUS REFRESH #{refresh_count} | REZIM HMM: {hmm_label} ({adaptive_config.get('Mode', 'NETRAL')})", unsafe_allow_html=True)
 
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("USD / IDR (LIVE TICK)", f"Rp {macro_info['usd_idr']:,.2f}", delta=f"{macro_info['usd_change_%']:.2f}%", delta_color="inverse")
@@ -882,4 +894,4 @@ with tab5:
         st.info("Jurnal transaksi tertutup bersih.")
 
 st.markdown("---")
-st.caption("⚡ **PRO QUANT TERMINAL v13.5 — HIGH-FREQUENCY LIVE STREAMING EDITION BY XPINONTOAN QUANT DESK.**")
+st.caption("⚡ **PRO QUANT TERMINAL v13.6 — SEAMLESS BACKGROUND LIVE STREAMING EDITION BY XPINONTOAN QUANT DESK.**")
