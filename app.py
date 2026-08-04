@@ -11,6 +11,13 @@ from hmmlearn.hmm import GaussianHMM
 from sklearn.metrics import accuracy_score
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
+import logging
+import tempfile
+
+# -------------------------
+# Logging
+# -------------------------
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 # ==========================================
 # 1. DESIGN SYSTEM: MINIMALIST + WATERMARK XPINONTOAN
@@ -130,11 +137,32 @@ init_journal()
 
 @st.cache_data(ttl=2)
 def load_journal():
-    return pd.read_csv(JOURNAL_FILE)
+    try:
+        return pd.read_csv(JOURNAL_FILE, parse_dates=['Tanggal Entry', 'Tanggal Exit'])
+    except Exception:
+        try:
+            return pd.read_csv(JOURNAL_FILE)
+        except Exception as e:
+            logging.exception("Failed to load journal: %s", e)
+            return pd.DataFrame(columns=[
+                'ID', 'Tanggal Entry', 'Tanggal Exit', 'Ticker', 'Tipe', 'Status',
+                'Harga Entry', 'Target TP', 'Stop Loss', 'Harga Closing/Exit', 
+                'Volume', 'PnL (Rp)', 'Keterangan Sistem', 'Sesuai Rule?'
+            ])
 
 def save_journal(df):
-    df.to_csv(JOURNAL_FILE, index=False)
-    st.cache_data.clear()
+    try:
+        fd, tmp = tempfile.mkstemp(prefix='journal_', suffix='.csv', dir='.')
+        os.close(fd)
+        df.to_csv(tmp, index=False)
+        os.replace(tmp, JOURNAL_FILE)
+        try:
+            st.cache_data.clear()
+        except Exception:
+            logging.info("st.cache_data.clear() not available or failed.")
+    except Exception as e:
+        logging.exception("Failed to save journal: %s", e)
+        raise
 
 df_journal = load_journal()
 
@@ -163,44 +191,57 @@ class AdaptiveQuantEngine:
             self.df['Log_Return'] = np.log(close_s / close_s.shift(1))
             self.df['Volatility_5d'] = self.df['Log_Return'].rolling(window=5).std()
             self.df.dropna(inplace=True)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.exception("fetch_market_data failed for %s: %s", self.benchmark, e)
+            self.df = None
 
     def detect_market_regime(self):
         if self.df is None or len(self.df) < 100:
             return 0, "🟢 BULLISH"
             
-        X = np.column_stack([self.df['Log_Return'].values, self.df['Volatility_5d'].values])
-        self.model.fit(X)
-        self.df['Regime'] = self.model.predict(X)
-        
-        state_means = []
-        for i in range(self.n_regimes):
-            regime_data = self.df[self.df['Regime'] == i]
-            avg_return = regime_data['Log_Return'].mean() * 100
-            avg_vol = regime_data['Volatility_5d'].mean() * 100
+        try:
+            X = np.column_stack([self.df['Log_Return'].values, self.df['Volatility_5d'].values])
+            self.model.fit(X)
+            self.df['Regime'] = self.model.predict(X)
             
-            if avg_return > 0 and avg_vol < 1.0:
-                label = "🟢 BULLISH"
-            elif avg_return < 0 and avg_vol > 1.0:
-                label = "🔴 BEARISH"
-            else:
-                label = "🟡 SIDEWAYS"
+            state_means = []
+            for i in range(self.n_regimes):
+                regime_data = self.df[self.df['Regime'] == i]
+                if regime_data.empty:
+                    avg_return = 0.0
+                    avg_vol = 0.0
+                else:
+                    avg_return = regime_data['Log_Return'].mean() * 100
+                    avg_vol = regime_data['Volatility_5d'].mean() * 100
                 
-            state_means.append((i, avg_return, avg_vol, label))
-            
-        current_regime_idx = int(self.df['Regime'].iloc[-1])
-        current_label = [item[3] for item in state_means if item[0] == current_regime_idx][0]
-        return current_regime_idx, current_label
+                if avg_return > 0 and avg_vol < 1.0:
+                    label = "🟢 BULLISH"
+                elif avg_return < 0 and avg_vol > 1.0:
+                    label = "🔴 BEARISH"
+                else:
+                    label = "🟡 SIDEWAYS"
+                    
+                state_means.append((i, avg_return, avg_vol, label))
+                
+            current_regime_idx = int(self.df['Regime'].iloc[-1])
+            current_label = next((item[3] for item in state_means if item[0] == current_regime_idx), "🟡 SIDEWAYS")
+            return current_regime_idx, current_label
+        except Exception as e:
+            logging.exception("detect_market_regime failed: %s", e)
+            return 0, "🟢 BULLISH"
 
     def auto_adjust_strategy(self, current_regime_idx, current_label):
-        if "BULLISH" in current_label or current_regime_idx == 0:
-            strategy_config = {'Mode': 'AGRESIF', 'Alokasi': '100% Kelly', 'Multiplier': 1.0, 'SL': '3x ATR'}
-        elif "BEARISH" in current_label or current_regime_idx == 1:
-            strategy_config = {'Mode': 'DEFENSIF', 'Alokasi': '30% Kelly', 'Multiplier': 0.3, 'SL': '1x ATR'}
-        else:
-            strategy_config = {'Mode': 'NETRAL', 'Alokasi': '50% Kelly', 'Multiplier': 0.5, 'SL': '2x ATR'}
-        return strategy_config
+        try:
+            if "BULLISH" in current_label or current_regime_idx == 0:
+                strategy_config = {'Mode': 'AGRESIF', 'Alokasi': '100% Kelly', 'Multiplier': 1.0, 'SL': '3x ATR'}
+            elif "BEARISH" in current_label or current_regime_idx == 1:
+                strategy_config = {'Mode': 'DEFENSIF', 'Alokasi': '30% Kelly', 'Multiplier': 0.3, 'SL': '1x ATR'}
+            else:
+                strategy_config = {'Mode': 'NETRAL', 'Alokasi': '50% Kelly', 'Multiplier': 0.5, 'SL': '2x ATR'}
+            return strategy_config
+        except Exception as e:
+            logging.exception("auto_adjust_strategy failed: %s", e)
+            return {'Mode': 'NETRAL', 'Alokasi': '50% Kelly', 'Multiplier': 0.5, 'SL': '2x ATR'}
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def run_adaptive_quant_engine():
@@ -226,14 +267,18 @@ def pull_live_data(tickers):
                     df = raw_data.dropna()
                 else:
                     if isinstance(raw_data.columns, pd.MultiIndex):
-                        if ticker not in raw_data.columns.levels[0]: continue
+                        if ticker not in raw_data.columns.levels[0]:
+                            logging.warning("Ticker %s not found in yf.download result columns", ticker)
+                            continue
                         df = raw_data[ticker].dropna()
-                    else: df = raw_data.dropna()
+                    else:
+                        df = raw_data.dropna()
                         
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
                     
-                if df.empty or len(df) < 5: continue
+                if df.empty or len(df) < 5:
+                    continue
                 
                 close_s = df['Close'].squeeze()
                 open_s = df['Open'].squeeze()
@@ -241,15 +286,20 @@ def pull_live_data(tickers):
                 low_s = df['Low'].squeeze()
                 vol_s = df['Volume'].squeeze()
                 
+                if len(close_s) < 1 or len(open_s) < 1:
+                    continue
+                
                 current_price = float(close_s.iloc[-1])
                 open_price = float(open_s.iloc[0])
                 
                 tp = (high_s + low_s + close_s) / 3
-                df['VWAP'] = (vol_s * tp).cumsum() / vol_s.cumsum()
-                current_vwap = float(df['VWAP'].iloc[-1])
+                cum_vol = vol_s.cumsum()
+                vwap_num = (vol_s * tp).cumsum()
+                df['VWAP'] = np.where(cum_vol > 0, vwap_num / cum_vol, np.nan)
+                current_vwap = float(df['VWAP'].iloc[-1]) if not np.isnan(df['VWAP'].iloc[-1]) else current_price
                 
-                pct_change = ((current_price - open_price) / open_price) * 100
-                dist_vwap = ((current_price - current_vwap) / current_vwap) * 100
+                pct_change = ((current_price - open_price) / open_price) * 100 if open_price != 0 else 0.0
+                dist_vwap = ((current_price - current_vwap) / current_vwap) * 100 if current_vwap != 0 else 0.0
                 
                 market_data.append({
                     'Ticker': ticker,
@@ -259,8 +309,11 @@ def pull_live_data(tickers):
                     'Jarak VWAP (%)': round(dist_vwap, 2),
                     '_raw_df': df
                 })
-            except Exception: pass
-    except Exception: pass
+            except Exception as e:
+                logging.exception("Error while processing ticker %s in pull_live_data: %s", ticker, e)
+                continue
+    except Exception as e:
+        logging.exception("pull_live_data failed: %s", e)
     return market_data
 
 # ==========================================
@@ -280,25 +333,31 @@ def get_macro_indicators():
         if isinstance(raw_usd.columns, pd.MultiIndex): raw_usd.columns = raw_usd.columns.get_level_values(0)
         if not raw_usd.empty:
             close_s = raw_usd['Close'].squeeze()
-            usd_idr_last = float(close_s.iloc[-1])
-            usd_idr_prev = float(close_s.iloc[-3]) if len(close_s) >= 3 else float(close_s.iloc[0])
-            usd_idr_change = ((usd_idr_last - usd_idr_prev) / usd_idr_prev) * 100
-    except Exception: pass
+            if len(close_s) >= 1:
+                usd_idr_last = float(close_s.iloc[-1])
+            usd_idr_prev = float(close_s.iloc[-3]) if len(close_s) >= 3 else (float(close_s.iloc[0]) if len(close_s) >= 1 else usd_idr_last)
+            usd_idr_change = ((usd_idr_last - usd_idr_prev) / usd_idr_prev) * 100 if usd_idr_prev != 0 else 0.0
+    except Exception as e:
+        logging.exception("get_macro_indicators: usd fetch failed: %s", e)
         
     try:
         raw_coal = yf.download("XLE", period="5d", progress=False)
         if isinstance(raw_coal.columns, pd.MultiIndex): raw_coal.columns = raw_coal.columns.get_level_values(0)
-        if not raw_coal.empty: coal_price = float(raw_coal['Close'].squeeze().iloc[-1])
-    except Exception: pass
+        if not raw_coal.empty:
+            coal_price = float(raw_coal['Close'].squeeze().iloc[-1])
+    except Exception as e:
+        logging.exception("get_macro_indicators: coal fetch failed: %s", e)
     
-    # PERHITUNGAN SKOR RISK-ON / RISK-OFF MAKRO (0 - 100)
     macro_score = 50
-    if usd_idr_change < 0: macro_score += 15
-    elif usd_idr_change > 0.5: macro_score -= 20
-    
-    if inflation <= 3.0: macro_score += 15
-    if coal_price > 55.0: macro_score += 10
-    if cpo_price > 3.50: macro_score += 10
+    try:
+        if usd_idr_change < 0: macro_score += 15
+        elif usd_idr_change > 0.5: macro_score -= 20
+
+        if inflation <= 3.0: macro_score += 15
+        if coal_price > 55.0: macro_score += 10
+        if cpo_price > 3.50: macro_score += 10
+    except Exception as e:
+        logging.exception("Macro scoring failed: %s", e)
     
     macro_score = max(10, min(95, macro_score))
     
@@ -325,19 +384,31 @@ def auto_execute_tp_sl_guard(df_j):
     
     for idx, row in df_open.iterrows():
         try:
-            ticker_data = yf.download(row['Ticker'], period="5d", interval="1m", progress=False)
-            if isinstance(ticker_data.columns, pd.MultiIndex): ticker_data.columns = ticker_data.columns.get_level_values(0)
-            if not ticker_data.empty:
+            ticker = row.get('Ticker')
+            if not ticker:
+                logging.warning("Row ID %s has no ticker", row.get('ID'))
+                continue
+            ticker_data = yf.download(ticker, period="5d", interval="1m", progress=False)
+            if isinstance(ticker_data, pd.DataFrame) and not ticker_data.empty:
+                if isinstance(ticker_data.columns, pd.MultiIndex):
+                    ticker_data.columns = ticker_data.columns.get_level_values(0)
+                if ticker_data['Close'].dropna().empty:
+                    continue
                 current_price = float(ticker_data['Close'].dropna().iloc[-1])
-                entry_price = float(row['Harga Entry'])
-                tp_target = float(row['Target TP'])
-                sl_target = float(row['Stop Loss'])
-                volume = float(row['Volume'])
+                entry_price = float(row['Harga Entry']) if not pd.isna(row['Harga Entry']) else current_price
+                tp_target = float(row['Target TP']) if not pd.isna(row['Target TP']) else entry_price
+                sl_target = float(row['Stop Loss']) if not pd.isna(row['Stop Loss']) else entry_price
+                volume = float(row['Volume']) if not pd.isna(row['Volume']) else 0.0
                 floating_pnl = (current_price - entry_price) * volume
+                
+                mask = df_j['ID'] == row['ID']
+                if not mask.any():
+                    logging.warning("Journal ID %s not found for update", row.get('ID'))
+                    continue
+                row_idx = df_j.loc[mask].index[0]
                 
                 if current_price >= tp_target:
                     realized_pnl = (current_price - entry_price) * volume
-                    row_idx = df_j[df_j['ID'] == row['ID']].index[0]
                     df_j.at[row_idx, 'Status'] = 'CLOSED'
                     df_j.at[row_idx, 'Harga Closing/Exit'] = current_price
                     df_j.at[row_idx, 'PnL (Rp)'] = realized_pnl
@@ -345,19 +416,24 @@ def auto_execute_tp_sl_guard(df_j):
                     executed_events.append({'ID': row['ID'], 'Ticker': row['Ticker'], 'Tipe': 'TAKE_PROFIT', 'Harga Exit': current_price, 'PnL (Rp)': realized_pnl})
                 elif current_price <= sl_target:
                     realized_pnl = (current_price - entry_price) * volume
-                    row_idx = df_j[df_j['ID'] == row['ID']].index[0]
                     df_j.at[row_idx, 'Status'] = 'CLOSED'
                     df_j.at[row_idx, 'Harga Closing/Exit'] = current_price
                     df_j.at[row_idx, 'PnL (Rp)'] = realized_pnl
                     df_j.at[row_idx, 'Keterangan Sistem'] = '🤖 AUTO-SL'
                     executed_events.append({'ID': row['ID'], 'Ticker': row['Ticker'], 'Tipe': 'CUT_LOSS', 'Harga Exit': current_price, 'PnL (Rp)': realized_pnl})
                 else:
-                    row_idx = df_j[df_j['ID'] == row['ID']].index[0]
                     df_j.at[row_idx, 'Harga Closing/Exit'] = current_price
                     df_j.at[row_idx, 'PnL (Rp)'] = floating_pnl
-        except Exception: pass
+            else:
+                logging.info("No intraday data for %s when checking TP/SL", row.get('Ticker'))
+        except Exception as e:
+            logging.exception("auto_execute_tp_sl_guard error for row %s: %s", row.get('ID'), e)
             
-    if executed_events: save_journal(df_j)
+    if executed_events: 
+        try:
+            save_journal(df_j)
+        except Exception as e:
+            logging.exception("Failed to save journal after TP/SL execution: %s", e)
     return df_j, executed_events
 
 # ==========================================
@@ -389,9 +465,11 @@ def inject_advanced_indicators(df):
 @st.cache_data(ttl=86400)
 def load_universe():
     try: return pd.read_csv('daftar_saham_ihsg.csv')['Ticker'].dropna().tolist()
-    except Exception: return ['BBCA.JK', 'BMRI.JK', 'BBRI.JK', 'TLKM.JK', 'ASII.JK', 'AMMN.JK', 'BREN.JK', 'GOTO.JK', 'BBNI.JK', 'BRIS.JK']
+    except Exception as e:
+        logging.exception("Failed to load universe: %s", e)
+        return ['BBCA.JK', 'BMRI.JK', 'BBRI.JK', 'TLKM.JK', 'ASII.JK', 'AMMN.JK', 'BREN.JK', 'GOTO.JK', 'BBNI.JK', 'BRIS.JK']
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_resource(ttl=86400, show_spinner=False)
 def train_xgboost_model(ticker, period="3y"):
     try:
         raw_df = yf.download(ticker, period=period, progress=False)
@@ -409,10 +487,12 @@ def train_xgboost_model(ticker, period="3y"):
         split = int(len(X) * 0.8)
         model = xgb.XGBClassifier(n_estimators=100, learning_rate=0.05, max_depth=3, subsample=0.8, random_state=42, eval_metric='logloss')
         model.fit(X.iloc[:split], y.iloc[:split])
-        acc = accuracy_score(y.iloc[split:], model.predict(X.iloc[split:]))
-        prob_buy = float(model.predict_proba(X.iloc[[-1]])[0][1]) * 100
+        acc = accuracy_score(y.iloc[split:], model.predict(X.iloc[split:])) if split < len(X) else 0.0
+        prob_buy = float(model.predict_proba(X.iloc[[-1]])[0][1]) * 100 if len(X) >= 1 else 0.0
         return model, feature_cols, acc, prob_buy
-    except Exception: return None, None, 0.0, 0.0
+    except Exception as e:
+        logging.exception("train_xgboost_model failed for %s: %s", ticker, e)
+        return None, None, 0.0, 0.0
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def massive_ml_ranking(tickers, top_limit=60):
@@ -425,7 +505,13 @@ def massive_ml_ranking(tickers, top_limit=60):
             bulk_data = yf.download(chunk, period="2y", group_by='ticker', threads=True, progress=False)
             for ticker in chunk:
                 try:
-                    df = bulk_data[ticker].dropna(subset=['Close']) if len(chunk) > 1 and isinstance(bulk_data.columns, pd.MultiIndex) else bulk_data.dropna(subset=['Close'])
+                    if isinstance(bulk_data, dict) or isinstance(bulk_data, pd.DataFrame):
+                        if len(chunk) > 1 and isinstance(bulk_data.columns, pd.MultiIndex):
+                            df = bulk_data[ticker].dropna(subset=['Close'])
+                        else:
+                            df = bulk_data.dropna(subset=['Close'])
+                    else:
+                        continue
                     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
                     if len(df) < 80: continue
                         
@@ -442,12 +528,15 @@ def massive_ml_ranking(tickers, top_limit=60):
                     split = int(len(X) * 0.8)
                     model = xgb.XGBClassifier(n_estimators=60, learning_rate=0.08, max_depth=3, subsample=0.8, random_state=42, eval_metric='logloss')
                     model.fit(X.iloc[:split], y.iloc[:split])
-                    acc = accuracy_score(y.iloc[split:], model.predict(X.iloc[split:]))
-                    prob_buy = float(model.predict_proba(X.iloc[[-1]])[0][1]) * 100
+                    acc = accuracy_score(y.iloc[split:], model.predict(X.iloc[split:])) if split < len(X) else 0.0
+                    prob_buy = float(model.predict_proba(X.iloc[[-1]])[0][1]) * 100 if len(X) >= 1 else 0.0
                     
                     ml_results.append({'Ticker': ticker, 'Harga (Rp)': round(float(close_s.iloc[-1]), 0), 'Win Prob ML (%)': f"{prob_buy:.1f}%", 'Akurasi Model': f"{acc*100:.1f}%", '_raw_prob': prob_buy})
-                except Exception: continue
-        except Exception: pass
+                except Exception as e:
+                    logging.exception("massive_ml_ranking per-ticker error for %s: %s", ticker, e)
+                    continue
+        except Exception as e:
+            logging.exception("massive_ml_ranking chunk download failed: %s", e)
             
     res_df = pd.DataFrame(ml_results)
     if not res_df.empty:
@@ -466,7 +555,10 @@ def run_screener_engine_full(capital, tickers_to_scan, macro_info, adaptive_conf
             bulk_data = yf.download(chunk, period="6mo", group_by='ticker', threads=True, progress=False)
             for ticker in chunk:
                 try:
-                    df = bulk_data[ticker].dropna(subset=['Close']) if len(chunk) > 1 and isinstance(bulk_data.columns, pd.MultiIndex) else bulk_data.dropna(subset=['Close'])
+                    if len(chunk) > 1 and isinstance(bulk_data.columns, pd.MultiIndex):
+                        df = bulk_data[ticker].dropna(subset=['Close'])
+                    else:
+                        df = bulk_data.dropna(subset=['Close'])
                     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
                     if len(df) < 50: continue
                         
@@ -475,17 +567,17 @@ def run_screener_engine_full(capital, tickers_to_scan, macro_info, adaptive_conf
                     df = inject_advanced_indicators(df)
                     
                     last_close = float(df['Close'].iloc[-1])
-                    golden_cross = float(df['EMA_20'].iloc[-2]) <= float(df['EMA_50'].iloc[-2]) and float(df['EMA_20'].iloc[-1]) > float(df['EMA_50'].iloc[-1])
-                    smart_money = float(df['OBV'].iloc[-1]) > float(df['OBV_EMA'].iloc[-1])
+                    golden_cross = float(df['EMA_20'].iloc[-2]) <= float(df['EMA_50'].iloc[-2]) and float(df['EMA_20'].iloc[-1]) > float(df['EMA_50'].iloc[-1]) if len(df) >= 2 else False
+                    smart_money = float(df['OBV'].iloc[-1]) > float(df['OBV_EMA'].iloc[-1]) if not (pd.isna(df['OBV'].iloc[-1]) or pd.isna(df['OBV_EMA'].iloc[-1])) else False
                     
                     if (golden_cross and smart_money) or ticker in ['BREN.JK', 'AMMN.JK']:
                         _, _, _, ml_prob = train_xgboost_model(ticker)
-                        atr = float(df['ATR_14'].iloc[-1]) if not np.isnan(df['ATR_14'].iloc[-1]) else last_close * 0.02
+                        atr = float(df['ATR_14'].iloc[-1]) if (not np.isnan(df['ATR_14'].iloc[-1])) else last_close * 0.02
                         sl_price = round(max(last_close * 0.90, last_close - (2 * atr)), 0)
                         tp_price = round(last_close + (2 * (2 * atr)), 0)
                         
-                        vol_lembar = int((capital * 0.10 * multiplier) / last_close)
-                        vol_lot = max(100, vol_lembar - (vol_lembar % 100))
+                        vol_lembar = int((capital * 0.10 * multiplier) / last_close) if last_close > 0 else 0
+                        vol_lot = max(100, vol_lembar - (vol_lembar % 100)) if vol_lembar > 0 else 100
                         
                         buy_candidates.append({
                             'Ticker': ticker, 'Harga Entry': round(last_close, 0), 'ML Win Prob': f"{ml_prob:.1f}%",
@@ -493,8 +585,11 @@ def run_screener_engine_full(capital, tickers_to_scan, macro_info, adaptive_conf
                             'Golden Cross': '✅ Bullish' if golden_cross else '🟢 Align',
                             'Dynamic SL (2x ATR)': sl_price, 'Target TP (2x Risk)': tp_price, 'Kelly Lot': f"{vol_lot:,} lembar"
                         })
-                except Exception: continue
-        except Exception: pass
+                except Exception as e:
+                    logging.exception("run_screener_engine_full per-ticker error %s: %s", ticker, e)
+                    continue
+        except Exception as e:
+            logging.exception("run_screener_engine_full chunk download failed: %s", e)
             
     if not buy_candidates:
         buy_candidates = [
@@ -515,7 +610,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-st.caption(f"Status: Online | Jam Market: {datetime.now().strftime('%H:%M:%S WIB')} | Rezim HMM: {hmm_label} ({adaptive_config['Mode']})")
+st.caption(f"Status: Online | Jam Market: {datetime.now().strftime('%H:%M:%S WIB')} | Rezim HMM: {hmm_label} ({adaptive_config.get('Mode', 'NETRAL')})")
 
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("USD / IDR", f"Rp {macro_info['usd_idr']:,.0f}", delta=f"{macro_info['usd_change_%']:.2f}%", delta_color="inverse")
@@ -592,6 +687,7 @@ with tab1:
                         st.success(f"✅ Berhasil men-deploy {len(new_trades)} saham ke Portofolio Aktif & Risk Guard Engine!")
                         st.rerun()
                 except Exception as err:
+                    logging.exception("Deploy to portfolio failed: %s", err)
                     st.error(f"❌ Gagal men-deploy sinyal ke portofolio: {err}")
 
 # ==========================================
@@ -626,7 +722,8 @@ with tab3:
             raw_df = [item['_raw_df'] for item in live_market_data if item['Ticker'] == selected_ticker][0]
             fig = go.Figure()
             fig.add_trace(go.Candlestick(x=raw_df.index, open=raw_df['Open'], high=raw_df['High'], low=raw_df['Low'], close=raw_df['Close'], name='Harga'))
-            fig.add_trace(go.Scatter(x=raw_df.index, y=raw_df['VWAP'], line=dict(color='#38BDF8', width=2), name='VWAP'))
+            if 'VWAP' in raw_df.columns:
+                fig.add_trace(go.Scatter(x=raw_df.index, y=raw_df['VWAP'], line=dict(color='#38BDF8', width=2), name='VWAP'))
             fig.update_layout(yaxis_title="Harga (IDR)", xaxis_rangeslider_visible=False, height=450, template="plotly_dark", margin=dict(l=10, r=10, t=30, b=10))
             st.plotly_chart(fig, use_container_width=True)
 
@@ -645,11 +742,11 @@ with tab4:
     
     st.subheader("🏆 Pemeringkatan Sektor & Saham Terkait Makro (Macro Alignment Score)")
     macro_rank_data = [
-        {'Peringkat': 1, 'Sektor Target': '🔥 Energy & Coal Mining', 'Katalis Makro': 'Newcastle Coal ($58.91)', 'Saham Utama': 'PTBA.JK, ADRO.JK, ITMG.JK', 'Alignment Score': '92 / 100', 'Status': '🟢 STRONG BUY'},
-        {'Peringkat': 2, 'Sektor Target': '🌴 Agriculture / CPO', 'Katalis Makro': 'CPO Malaysia (3.93 MYR)', 'Saham Utama': 'AALI.JK, LSIP.JK, TAPG.JK', 'Alignment Score': '88 / 100', 'Status': '🟢 STRONG BUY'},
+        {'Peringkat': 1, 'Sektor Target': '🔥 Energy & Coal Mining', 'Katalis Makro': f'Newcastle Coal (${macro_info["coal_price"]:.2f})', 'Saham Utama': 'PTBA.JK, ADRO.JK, ITMG.JK', 'Alignment Score': '92 / 100', 'Status': '🟢 STRONG BUY'},
+        {'Peringkat': 2, 'Sektor Target': '🌴 Agriculture / CPO', 'Katalis Makro': f'CPO Malaysia ({macro_info["cpo_price"]:.2f} MYR)', 'Saham Utama': 'AALI.JK, LSIP.JK, TAPG.JK', 'Alignment Score': '88 / 100', 'Status': '🟢 STRONG BUY'},
         {'Peringkat': 3, 'Sektor Target': '🏦 Financial & Banking', 'Katalis Makro': 'BI Rate (6.00%) & Liquidity', 'Saham Utama': 'BBCA.JK, BMRI.JK, BBRI.JK', 'Alignment Score': '85 / 100', 'Status': '🟢 OVERWEIGHT'},
         {'Peringkat': 4, 'Sektor Target': '📱 Telecommunication', 'Katalis Makro': 'Stable Consumer Inflation', 'Saham Utama': 'TLKM.JK, ISAT.JK, EXCL.JK', 'Alignment Score': '74 / 100', 'Status': '🟡 NEUTRAL'},
-        {'Peringkat': 5, 'Sektor Target': '🚗 Automotive & Industrial', 'Katalis Makro': 'USD/IDR Exchange Rate (Rp 17,986)', 'Saham Utama': 'ASII.JK, AUTO.JK', 'Alignment Score': '62 / 100', 'Status': '🟡 NEUTRAL'}
+        {'Peringkat': 5, 'Sektor Target': '🚗 Automotive & Industrial', 'Katalis Makro': f'USD/IDR Exchange Rate (Rp {macro_info["usd_idr"]:,.0f})', 'Saham Utama': 'ASII.JK, AUTO.JK', 'Alignment Score': '62 / 100', 'Status': '🟡 NEUTRAL'}
     ]
     st.dataframe(pd.DataFrame(macro_rank_data), use_container_width=True, hide_index=True)
     
@@ -678,7 +775,7 @@ with tab4:
 # ==========================================
 with tab5:
     st.subheader("📂 Posisi Aktif & Real-Time Risk Guard")
-    df_open = df_journal[df_journal['Status'] == 'OPEN'].copy()
+    df_open = df_journal[df_journal['Status'] == 'OPEN'].copy() if not df_journal.empty else pd.DataFrame()
     if not df_open.empty:
         if st.button("🔄 Check Auto-TP/SL Now"):
             df_journal, exec_events = auto_execute_tp_sl_guard(df_journal)
@@ -689,12 +786,13 @@ with tab5:
         
     st.markdown("---")
     st.subheader("📈 Jurnal Realisasi Trade")
-    df_closed = df_journal[df_journal['Status'] == 'CLOSED'].copy()
+    df_closed = df_journal[df_journal['Status'] == 'CLOSED'].copy() if not df_journal.empty else pd.DataFrame()
     if not df_closed.empty:
         st.dataframe(df_closed[['ID', 'Tanggal Exit', 'Ticker', 'Harga Entry', 'Harga Closing/Exit', 'PnL (Rp)', 'Keterangan Sistem']], use_container_width=True, hide_index=True)
         m1, m2 = st.columns(2)
         m1.metric("TOTAL REALIZED PnL", f"Rp {float(df_closed['PnL (Rp)'].sum()):,.0f}")
-        m2.metric("WIN RATE HISTORIS", f"{(len(df_closed[df_closed['PnL (Rp)'] > 0]) / len(df_closed)) * 100:.0f}%")
+        win_rate = (len(df_closed[df_closed['PnL (Rp)'] > 0]) / len(df_closed) * 100) if len(df_closed) > 0 else 0.0
+        m2.metric("WIN RATE HISTORIS", f"{win_rate:.0f}%")
     else:
         st.info("Jurnal transaksi tertutup bersih.")
 
