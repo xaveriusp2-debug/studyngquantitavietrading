@@ -175,8 +175,19 @@ st.markdown("""
 <div class="watermark-fixed">⚡ DESIGNED BY XPINONTOAN</div>
 """, unsafe_allow_html=True)
 
-# Smooth refresh cycle set to 15 seconds
-refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v140")
+# SESSION STATE MANAGEMENT FOR SCREENER SCAN LOCK
+if 'is_scanning' not in st.session_state:
+    st.session_state['is_scanning'] = False
+if 'live_signals' not in st.session_state:
+    st.session_state['live_signals'] = pd.DataFrame()
+if 'ml_leaderboard' not in st.session_state:
+    st.session_state['ml_leaderboard'] = pd.DataFrame()
+
+# AUTO-PAUSE REFRESH DURING MARKET SCAN
+if not st.session_state['is_scanning']:
+    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v141")
+else:
+    refresh_count = 0
 
 JOURNAL_FILE = 'trade_journal_v5.csv'
 
@@ -221,11 +232,6 @@ def save_journal(df):
         raise
 
 df_journal = load_journal()
-
-if 'live_signals' not in st.session_state:
-    st.session_state['live_signals'] = pd.DataFrame()
-if 'ml_leaderboard' not in st.session_state:
-    st.session_state['ml_leaderboard'] = pd.DataFrame()
 
 # ==========================================
 # 2. REAL-TIME MACRO & KURS CONNECTOR
@@ -383,9 +389,7 @@ def pull_live_data(tickers):
     market_data = []
     
     try:
-        # Mengunduh data interval 1-menit yang sedang berjalan hari ini
         raw_data = yf.download(tickers, period="1d", interval="1m", group_by='ticker', threads=True, progress=False)
-        
         for ticker in tickers:
             if len(tickers) == 1:
                 df = raw_data.dropna()
@@ -398,11 +402,9 @@ def pull_live_data(tickers):
                 
             if df.empty or len(df) < 2: continue
             
-            # Harga Terkini (Bar 1 menit terakhir)
             current_price = float(df['Close'].iloc[-1])
-            open_price = float(df['Open'].iloc[0]) # Harga buka hari ini
+            open_price = float(df['Open'].iloc[0])
             
-            # Kalkulasi VWAP Live
             v = df['Volume']
             tp = (df['High'] + df['Low'] + df['Close']) / 3
             cum_v = v.cumsum()
@@ -410,10 +412,7 @@ def pull_live_data(tickers):
             df['VWAP'] = vwap_s
             current_vwap = float(df['VWAP'].iloc[-1]) if not np.isnan(df['VWAP'].iloc[-1]) else current_price
             
-            # Menghitung % Perubahan dari harga buka
             pct_change = ((current_price - open_price) / open_price) * 100 if open_price != 0 else 0.0
-            
-            # Jarak harga ke VWAP
             dist_vwap = ((current_price - current_vwap) / current_vwap) * 100 if current_vwap != 0 else 0.0
             
             market_data.append({
@@ -423,13 +422,12 @@ def pull_live_data(tickers):
                 'Level VWAP': round(current_vwap, 0),
                 'Jarak ke VWAP (%)': round(dist_vwap, 2),
                 'Volume 1M Terakhir': int(df['Volume'].iloc[-1]),
-                '_raw_df': df # Simpan dataframe untuk grafik
+                '_raw_df': df
             })
     except Exception as e:
         logging.exception("pull_live_data error: %s", e)
             
     return market_data
-
 
 # ==========================================
 # 4. HIGH-PRECISION FEATURE INJECTION & ML ENGINE
@@ -438,18 +436,15 @@ def inject_advanced_indicators(df):
     close_s = df['Close'].squeeze()
     vol_s = df['Volume'].squeeze()
     
-    # OBV & OBV EMA
     df['OBV'] = (np.sign(close_s.diff()) * vol_s).fillna(0).cumsum()
     df['OBV_EMA'] = df['OBV'].ewm(span=20, adjust=False).mean()
     
-    # Dynamic ATR 14
     prev_close = close_s.shift(1)
     tr_df = pd.concat([df['High'].squeeze() - df['Low'].squeeze(), (df['High'].squeeze() - prev_close).abs(), (df['Low'].squeeze() - prev_close).abs()], axis=1)
     df['ATR_14'] = tr_df.max(axis=1).rolling(window=14).mean()
     df['ATR_Ratio'] = df['ATR_14'] / close_s
     df['Dynamic_SL'] = close_s - (2 * df['ATR_14'])
     
-    # Multi-Timeframe Returns & Volatility
     df['Return_1d'] = close_s.pct_change(1)
     df['Return_3d'] = close_s.pct_change(3)
     df['Return_5d'] = close_s.pct_change(5)
@@ -459,13 +454,11 @@ def inject_advanced_indicators(df):
     df['Vol_20d'] = df['Return_1d'].rolling(20).std()
     df['Volume_Ratio'] = vol_s / vol_s.rolling(10).mean()
     
-    # Moving Averages & RSI
     df['SMA_20'] = close_s.rolling(20).mean()
     df['SMA_50'] = close_s.rolling(50).mean()
     df['Dist_SMA20'] = (close_s - df['SMA_20']) / df['SMA_20']
     df['Dist_SMA50'] = (close_s - df['SMA_50']) / df['SMA_50']
     
-    # Relative Strength Index (RSI 14)
     delta = close_s.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -479,11 +472,10 @@ def inject_advanced_indicators(df):
 def load_universe():
     try: return pd.read_csv('daftar_saham_ihsg.csv')['Ticker'].dropna().tolist()
     except Exception as e:
-        return ['BBCA.JK', 'BMRI.JK', 'BBRI.JK', 'TLKM.JK', 'ASII.JK', 'AMMN.JK', 'BREN.JK', 'GOTO.JK', 'BBNI.JK', 'BRIS.JK']
+        return ['BBCA.JK', 'BMRI.JK', 'BBRI.JK', 'TLKM.JK', 'ASII.JK', 'AMMN.JK', 'BREN.JK', 'GOTO.JK', 'BBNI.JK', 'BRIS.JK', 'PTBA.JK', 'ADRO.JK', 'ITMG.JK', 'AALI.JK', 'LSIP.JK']
 
 @st.cache_resource(ttl=86400, show_spinner=False)
 def train_xgboost_model(ticker, period="5y"):
-    """Melatih Model XGBoost dengan data historis 5 tahun bursa untuk mendeteksi probabilitas kemenangan akurat"""
     try:
         raw_df = yf.download(ticker, period=period, progress=False)
         if isinstance(raw_df.columns, pd.MultiIndex): raw_df.columns = raw_df.columns.get_level_values(0)
@@ -530,14 +522,14 @@ def get_macro_micro_explanation(ticker, last_close, macro_info):
     else:
         return f"🟢 Macro-Micro Alignment: Sesuai dengan Skor Makro Integrated ({macro_info['macro_score']}/100) & Penguatan Tren."
 
-# HIGH-PRECISION SCREENER ENGINE WITH COMBINED INDICATOR SCORING
+# HIGH-PRECISION SCREENER ENGINE WITH PRIORITY SCAN LOCK
 def run_screener_engine_full(capital, tickers_to_scan, macro_info, adaptive_config):
     buy_candidates = []
-    chunk_size = 50
+    chunk_size = 40
     chunks = [tickers_to_scan[i:i + chunk_size] for i in range(0, len(tickers_to_scan), chunk_size)]
     multiplier = adaptive_config.get('Multiplier', 1.0)
     
-    for chunk in chunks[:5]:
+    for chunk in chunks[:4]:
         try:
             bulk_data = yf.download(chunk, period="1y", group_by='ticker', threads=True, progress=False)
             for ticker in chunk:
@@ -555,14 +547,12 @@ def run_screener_engine_full(capital, tickers_to_scan, macro_info, adaptive_conf
                     smart_money = float(df['OBV'].iloc[-1]) > float(df['OBV_EMA'].iloc[-1]) if not (pd.isna(df['OBV'].iloc[-1]) or pd.isna(df['OBV_EMA'].iloc[-1])) else False
                     rsi_val = float(df['RSI_14'].iloc[-1]) if not pd.isna(df['RSI_14'].iloc[-1]) else 50.0
                     
-                    # Filter combining Golden Cross, Smart Money OBV, RSI Momentum, and Priority Tickers
-                    if (golden_cross and smart_money and rsi_val >= 45) or ticker in ['BREN.JK', 'AMMN.JK', 'BBCA.JK', 'BMRI.JK', 'ADRO.JK']:
+                    if (golden_cross and smart_money and rsi_val >= 40) or ticker in ['BREN.JK', 'AMMN.JK', 'BBCA.JK', 'BMRI.JK', 'ADRO.JK', 'PTBA.JK']:
                         _, _, acc_score, ml_raw_prob = train_xgboost_model(ticker)
                         
-                        # COMBINED HIGH-PRECISION WIN PROBABILITY FORMULA (ML 70% + MACRO 30%)
                         macro_w = float(macro_info['macro_score'])
                         combined_win_prob = (ml_raw_prob * 0.70) + (macro_w * 0.30)
-                        combined_win_prob = max(48.0, min(94.5, combined_win_prob))
+                        combined_win_prob = max(52.0, min(94.8, combined_win_prob))
                         
                         atr = float(df['ATR_14'].iloc[-1]) if (not np.isnan(df['ATR_14'].iloc[-1])) else last_close * 0.02
                         sl_price = round(max(last_close * 0.90, last_close - (2 * atr)), 0)
@@ -708,7 +698,9 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-st.caption(f"<span class='live-pulse-hft'></span> <b>STATUS REAL-TIME MARKET SERVER:</b> SEAMLESS BACKGROUND STREAMING | TICK: {macro_info['last_tick_time']} | SIKLUS REFRESH #{refresh_count} | REZIM HMM: {hmm_label} ({adaptive_config.get('Mode', 'NETRAL')})", unsafe_allow_html=True)
+status_text = "PEMINDAIAN PASAR AKTIF (REFRESH DAHALIKAN)" if st.session_state['is_scanning'] else f"SEAMLESS BACKGROUND STREAMING | TICK: {macro_info['last_tick_time']} | REFRESH #{refresh_count}"
+
+st.caption(f"<span class='live-pulse-hft'></span> <b>STATUS REAL-TIME MARKET SERVER:</b> {status_text} | REZIM HMM: {hmm_label} ({adaptive_config.get('Mode', 'NETRAL')})", unsafe_allow_html=True)
 
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("USD / IDR (LIVE TICK)", f"Rp {macro_info['usd_idr']:,.2f}", delta=f"{macro_info['usd_change_%']:.2f}%", delta_color="inverse")
@@ -756,8 +748,11 @@ with tab1:
         capital_input = st.number_input("Modal Trading (Rp):", min_value=10000000, value=100000000, step=10000000)
         scan_button = st.button("🚀 PINDAI PASAR DENGAN ML HISTORIS BEI", type="primary", use_container_width=True)
         if scan_button:
-            with st.spinner("Memindai sinyal kuantitatif & mengalkulasi probabilitas menang ML..."):
+            st.session_state['is_scanning'] = True
+            with st.spinner("🔍 Memindai seluruh bursa BEI & melatih XGBoost ML 5-Tahun (Refresh Otomatis Dimatikan Sementara)..."):
                 st.session_state['live_signals'] = run_screener_engine_full(capital_input, all_ihsg_universe, macro_info, adaptive_config)
+            st.session_state['is_scanning'] = False
+            st.rerun()
                 
     with col_b:
         if not st.session_state['live_signals'].empty:
@@ -920,4 +915,4 @@ with tab5:
         st.info("Jurnal transaksi tertutup bersih.")
 
 st.markdown("---")
-st.caption("⚡ **PRO QUANT TERMINAL v14.0 — INSTITUTIONAL SCREENER PRIORITY & MULTI-YEAR ML INTELLIGENCE EDITION BY XPINONTOAN QUANT DESK.**")
+st.caption("⚡ **PRO QUANT TERMINAL v14.1 — SCANNER PRIORITY LOCK & AUTO-PAUSE REFRESH EDITION BY XPINONTOAN QUANT DESK.**")
