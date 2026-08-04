@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # ==========================================
 # 1. DESIGN SYSTEM: MINIMALIST + WATERMARK XPINONTOAN + ZERO FLICKER
 # ==========================================
-st.set_page_config(page_title="Pro Quant Terminal — Wall Street Evaluation Desk", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Pro Quant Terminal — Native Streamlit Evaluation Desk", layout="wide", page_icon="⚡")
 
 st.markdown("""
 <style>
@@ -92,58 +92,6 @@ st.markdown("""
         border-radius: 8px;
         padding: 16px;
         margin-bottom: 16px;
-    }
-
-    /* CLEAN INSTITUTIONAL EVALUATION CARD DESIGN (NO SYMBOLS) */
-    .institutional-eval-container {
-        background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%);
-        border: 1px solid #334155;
-        border-left: 5px solid #10B981;
-        border-radius: 12px;
-        padding: 24px;
-        margin-bottom: 24px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-    }
-
-    .eval-badge-row {
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-        margin-bottom: 20px;
-    }
-
-    .eval-badge {
-        background: rgba(16, 185, 129, 0.12);
-        border: 1px solid rgba(16, 185, 129, 0.3);
-        color: #34D399;
-        padding: 8px 14px;
-        border-radius: 8px;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.82rem;
-        font-weight: 600;
-    }
-
-    .eval-pill-box {
-        background: rgba(30, 41, 59, 0.6);
-        border: 1px solid #334155;
-        border-radius: 10px;
-        padding: 18px 22px;
-        margin-bottom: 14px;
-    }
-
-    .eval-pill-title {
-        color: #38BDF8;
-        font-size: 0.98rem;
-        font-weight: 700;
-        margin-bottom: 8px;
-        letter-spacing: 0.02em;
-    }
-
-    .eval-pill-body {
-        color: #E2E8F0;
-        font-size: 0.89rem;
-        line-height: 1.7;
-        margin: 0;
     }
 
     /* CUSTOM ENGAGING ANIMATED LOADER */
@@ -275,7 +223,7 @@ if 'rebalance_logs' not in st.session_state:
 
 # AUTO-REFRESH EXACTLY EVERY 15 SECONDS (PAUSED DURING ACTIVE SCREENER SCAN)
 if not st.session_state['is_scanning']:
-    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v220")
+    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v230")
 else:
     refresh_count = 0
 
@@ -981,7 +929,7 @@ def aggregate_compounding_average(df_open):
     res_df = pd.DataFrame(aggregated_rows)
     return res_df
 
-# RENDER KARTU EVALUASI INSTITUSI WALL STREET GRADE (CLEAN TANPA ASTERIS & BULLET)
+# RENDER KARTU EVALUASI INSTITUSI NATIVE STREAMLIT LAYOUT
 def render_institutional_evaluation_card(df_open_agg, macro_info, regime_label):
     clean_regime = regime_label.replace("🟢", "").replace("🔴", "").replace("🟡", "").strip()
     
@@ -990,9 +938,11 @@ def render_institutional_evaluation_card(df_open_agg, macro_info, regime_label):
         tot_pnl_rp = 0.0
         tot_return_pct = 0.0
         num_positions = 0
-        best_str = "Tidak ada posisi aktif"
-        worst_str = "Tidak ada posisi aktif"
-        risk_level = "Konservatif Penuh di Kas"
+        best_str = "N/A (Cash 100%)"
+        worst_str = "N/A (Cash 100%)"
+        best_delta = "0.00%"
+        worst_delta = "0.00%"
+        risk_level = "Terukur & Optimis"
     else:
         tot_capital = float(df_open_agg['Total Modal (Rp)'].sum())
         tot_pnl_rp = float(df_open_agg['PnL (Rp)'].sum())
@@ -1002,57 +952,45 @@ def render_institutional_evaluation_card(df_open_agg, macro_info, regime_label):
         best_pos = df_open_agg.sort_values(by='PnL (%)', ascending=False).iloc[0]
         worst_pos = df_open_agg.sort_values(by='PnL (%)', ascending=True).iloc[0]
         
-        best_str = f"{best_pos['Ticker']} ({best_pos['PnL (%)']:+.2f}%)"
-        worst_str = f"{worst_pos['Ticker']} ({worst_pos['PnL (%)']:+.2f}%)"
-        risk_level = "Terukur dan Optimis" if tot_return_pct >= 0 else "Diperlukan Rebalancing"
+        best_str = str(best_pos['Ticker'])
+        best_delta = f"{best_pos['PnL (%)']:+.2f}%"
+        worst_str = str(worst_pos['Ticker'])
+        worst_delta = f"{worst_pos['PnL (%)']:+.2f}%"
+        risk_level = "Terukur & Optimis" if tot_return_pct >= 0 else "Diperlukan Rebalancing"
 
-    html_code = f"""
-    <div class="institutional-eval-container">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
-            <h3 style="margin: 0; color: #F8FAFC; font-size: 1.15rem; font-weight: 700; letter-spacing: 0.02em;">
-                LAPORAN EVALUASI HARIAN PENUTUPAN BURSA
-            </h3>
-            <span style="background: rgba(16, 185, 129, 0.15); color: #34D399; padding: 4px 14px; border-radius: 20px; font-size: 0.78rem; font-weight: 600; border: 1px solid rgba(16, 185, 129, 0.3);">
-                Analisis Kuantitatif Institusi Wall Street
-            </span>
-        </div>
+    st.subheader("📑 Laporan Evaluasi Harian Penutupan Bursa")
+    st.caption("Analisis Kuantitatif Institusi Wall Street")
 
-        <div class="eval-badge-row">
-            <div class="eval-badge">Floating Return: {tot_return_pct:+.2f}%</div>
-            <div class="eval-badge">Profil Risiko: {risk_level}</div>
-            <div class="eval-badge">Top Alpha Performer: {best_str}</div>
-            <div class="eval-badge">Under Monitoring: {worst_str}</div>
-        </div>
+    # 1. Baris Metrik (Native Streamlit Columns)
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric(label="Floating Return", value=f"{tot_return_pct:+.2f}%")
+    m2.metric(label="Profil Risiko", value=risk_level)
+    m3.metric(label="Top Alpha Performer", value=best_str, delta=best_delta)
+    m4.metric(label="Under Monitoring", value=worst_str, delta=worst_delta, delta_color="inverse")
 
-        <div class="eval-pill-box">
-            <div class="eval-pill-title">Evaluasi Kinerja Portofolio dan Manajemen Kapital</div>
-            <p class="eval-pill-body">
-                Berdasarkan Teori Portofolio Modern Markowitz dan prinsip pengembalian berbobot risiko Sharpe Ratio, portofolio saat ini mengelola {num_positions} instrumen saham aktif yang terkonsolidasi melalui metode Compounding Average dengan total modal terpakai sebesar Rp {tot_capital:,.0f}. 
-                Penutupan sesi perdagangan mencatatkan imbal hasil floating bersih sebesar Rp {tot_pnl_rp:,.0f} atau setara {tot_return_pct:+.2f}% terhadap total kapitalisasi yang dialokasikan. 
-                Seluruh parameter risiko dikendalikan secara otomatis menggunakan formulasi volatilitas ATR dua kali lipat untuk proteksi modal dari penurunan ekstrim.
-            </p>
-        </div>
+    st.markdown("---")
 
-        <div class="eval-pill-box">
-            <div class="eval-pill-title">Interpretasi Makro Ekonomi dan Teori Portofolio Modern</div>
-            <p class="eval-pill-body">
-                Mengacu pada Model Perubahan Rezim Hamilton dan Teori Penetapan Harga Aset Arbitrase, skor kondisi makro berada pada level {macro_info['macro_score']} dari 100 dalam rezim pasar {clean_regime}. 
-                Dukungan fundamental terlihat dari stabilitas harga komoditas Newcastle Coal pada level {macro_info['coal_price']:.2f} USD per ton dan CPO Malaysia pada level {macro_info['cpo_price']:.2f} MYR per ton. 
-                Nilai tukar Rupiah berada pada level Rp {macro_info['usd_idr']:,.2f} per Dolar AS, yang menurut teori arus modal internasional memberikan fondasi yang kuat bagi ketersediaan likuiditas institusional di pasar domestik.
-            </p>
-        </div>
+    # 2. Kotak Laporan Evaluasi (Native Streamlit Info & Success)
+    st.markdown("#### 📊 Evaluasi Kinerja Portofolio & Manajemen Kapital")
+    st.info(f"""
+    Berdasarkan Teori Portofolio Modern Markowitz dan prinsip pengembalian berbobot risiko Sharpe Ratio, portofolio saat ini mengelola {num_positions} instrumen saham aktif yang terkonsolidasi melalui metode Compounding.
+    Penutupan sesi perdagangan mencatatkan imbal hasil floating bersih sebesar Rp {tot_pnl_rp:,.0f} atau setara {tot_return_pct:+.2f}% terhadap total kapitalisasi yang dialokasikan.
+    Seluruh parameter risiko dikendalikan secara otomatis menggunakan formulasi volatilitas ATR dua kali lipat untuk proteksi modal dari penurunan ekstrem.
+    """)
 
-        <div class="eval-pill-box" style="margin-bottom: 0;">
-            <div class="eval-pill-title">Solusi Strategis dan Rekomendasi Eksekusi Pembukaan Bursa</div>
-            <p class="eval-pill-body">
-                Sesuai dengan kriteria ukuran posisi Half-Kelly dan prinsip eksekusi micro-structure pasar, strategi terbaik untuk sesi pembukaan esok hari adalah mempertahankan seluruh posisi compounding aktif dengan pengawasan trailing stop yang ketat. 
-                Sistem tidak mendeteksi adanya keharusan ликвиdasi darurat karena tidak ada ambang batas risiko yang terlewati. 
-                Penambahan alokasi modal baru disarankan untuk dieksekusi menggunakan algoritma VWAP Sniper setelah fase pembentukan harga pre-opening selesai.
-            </p>
-        </div>
-    </div>
-    """
-    st.markdown(html_code, unsafe_allow_html=True)
+    st.markdown("#### 🌍 Interpretasi Makro Ekonomi")
+    st.info(f"""
+    Mengacu pada Model Perubahan Rezim Hamilton dan Teori Penetapan Harga Aset Arbitrase, skor kondisi makro berada pada level {macro_info['macro_score']} dari 100 dalam rezim pasar {clean_regime}. 
+    Dukungan fundamental terlihat dari stabilitas harga komoditas Newcastle Coal pada level ${macro_info['coal_price']:.2f} USD per ton dan CPO Malaysia pada level {macro_info['cpo_price']:.2f} MYR per ton.
+    Nilai tukar Rupiah berada pada level Rp {macro_info['usd_idr']:,.2f} per Dolar AS, memberikan fondasi likuiditas institusional yang kuat.
+    """)
+
+    st.markdown("#### ⚡ Solusi Strategis & Rekomendasi Eksekusi")
+    st.success("""
+    Sesuai dengan kriteria ukuran posisi Half-Kelly dan prinsip eksekusi micro-structure pasar, strategi terbaik untuk sesi pembukaan esok hari adalah mempertahankan seluruh posisi compounding aktif.
+    Sistem tidak mendeteksi adanya keharusan likuidasi darurat karena tidak ada ambang batas risiko yang terlewati. 
+    Penambahan alokasi modal baru disarankan untuk dieksekusi menggunakan algoritma VWAP Sniper setelah fase pembentukan harga pre-opening selesai.
+    """)
 
 def check_and_record_daily_snapshot(df_open_agg, macro_info, regime_label, df_snapshots):
     now = datetime.now()
@@ -1491,7 +1429,7 @@ with tab5:
         
     st.markdown("---")
     
-    # RENDER EXECUTIVE INSTITUTIONAL EVALUATION CARD (WALL STREET GRADE - CLEAN NO SYMBOLS)
+    # RENDER NATIVE STREAMLIT INSTITUTIONAL EVALUATION WIDGETS
     render_institutional_evaluation_card(df_open_agg, macro_info, hmm_label)
     
     col_sn1, col_sn2 = st.columns([1.5, 3])
@@ -1541,4 +1479,4 @@ with tab5:
         st.info("Jurnal transaksi tertutup bersih. Win Rate Historis: 0%")
 
 st.markdown("---")
-st.caption("⚡ **PRO QUANT TERMINAL v22.0 — WALL STREET QUANTITATIVE EVALUATION DESK BY XPINONTOAN QUANT DESK.**")
+st.caption("⚡ **PRO QUANT TERMINAL v23.0 — NATIVE STREAMLIT INSTITUTIONAL EVALUATION DESK BY XPINONTOAN QUANT DESK.**")
