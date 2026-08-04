@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # ==========================================
 # 1. DESIGN SYSTEM: MINIMALIST + WATERMARK XPINONTOAN + ZERO FLICKER
 # ==========================================
-st.set_page_config(page_title="Pro Quant Terminal — Portfolio Analytics", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Pro Quant Terminal — Compounding Average", layout="wide", page_icon="⚡")
 
 st.markdown("""
 <style>
@@ -185,7 +185,7 @@ if 'ml_leaderboard' not in st.session_state:
 
 # AUTO-REFRESH EXACTLY EVERY 15 SECONDS (PAUSED DURING ACTIVE SCREENER SCAN)
 if not st.session_state['is_scanning']:
-    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v150")
+    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v160")
 else:
     refresh_count = 0
 
@@ -643,7 +643,7 @@ def run_screener_engine_full(capital, tickers_to_scan, macro_info, adaptive_conf
     return res_df
 
 # ==========================================
-# 5. REAL-TIME LIVE PORTFOLIO STREAMING ENGINE
+# 5. REAL-TIME LIVE PORTFOLIO STREAMING & COMPOUNDING AVERAGE ENGINE
 # ==========================================
 def update_portfolio_live_prices(df_j):
     df_open = df_j[df_j['Status'] == 'OPEN'].copy()
@@ -683,6 +683,55 @@ def update_portfolio_live_prices(df_j):
                 df_j.at[row_idx, 'PnL (Rp)'] = round(floating_pnl, 0)
                 
     return df_j
+
+# ENGINE COMPOUNDING AVERAGE: MENGGABUNGKAN SAHAM KEMBAR DI PORTOFOLIO MENJADI 1 POSISI TERAMAT RATA-RATA
+def aggregate_compounding_average(df_open):
+    if df_open.empty:
+        return df_open
+        
+    aggregated_rows = []
+    for ticker, group in df_open.groupby('Ticker'):
+        if len(group) == 1:
+            row_dict = group.iloc[0].to_dict()
+            row_dict['Total Modal (Rp)'] = float(row_dict['Harga Entry']) * float(row_dict['Volume'])
+            row_dict['PnL (%)'] = (float(row_dict['PnL (Rp)']) / row_dict['Total Modal (Rp)'] * 100) if row_dict['Total Modal (Rp)'] > 0 else 0.0
+            row_dict['Jumlah Posisi'] = 1
+            aggregated_rows.append(row_dict)
+        else:
+            tot_volume = float(group['Volume'].sum())
+            if tot_volume <= 0: continue
+            
+            weighted_entry = (group['Harga Entry'] * group['Volume']).sum() / tot_volume
+            weighted_tp = (group['Target TP'] * group['Volume']).sum() / tot_volume
+            weighted_sl = (group['Stop Loss'] * group['Volume']).sum() / tot_volume
+            last_close_p = float(group['Harga Closing/Exit'].iloc[-1])
+            tot_pnl_rp = (last_close_p - weighted_entry) * tot_volume
+            tot_modal = weighted_entry * tot_volume
+            tot_pnl_pct = (tot_pnl_rp / tot_modal * 100) if tot_modal > 0 else 0.0
+            first_date = str(group['Tanggal Entry'].iloc[0])
+            
+            aggregated_rows.append({
+                'ID': f"AVG-{ticker.replace('.JK', '')}",
+                'Tanggal Entry': first_date,
+                'Tanggal Exit': '-',
+                'Ticker': ticker,
+                'Tipe': 'LONG (Compounded)',
+                'Status': 'OPEN',
+                'Harga Entry': round(weighted_entry, 2),
+                'Target TP': round(weighted_tp, 2),
+                'Stop Loss': round(weighted_sl, 2),
+                'Harga Closing/Exit': round(last_close_p, 2),
+                'Volume': tot_volume,
+                'Total Modal (Rp)': round(tot_modal, 0),
+                'PnL (Rp)': round(tot_pnl_rp, 0),
+                'PnL (%)': round(tot_pnl_pct, 2),
+                'Jumlah Posisi': len(group),
+                'Keterangan Sistem': f'🤖 Compounding Average ({len(group)} Posisi Dimerge)',
+                'Sesuai Rule?': 'Ya'
+            })
+            
+    res_df = pd.DataFrame(aggregated_rows)
+    return res_df
 
 def auto_execute_tp_sl_guard(df_j):
     df_j = update_portfolio_live_prices(df_j)
@@ -849,7 +898,7 @@ with tab2:
     col_l1, col_l2 = st.columns([1, 3])
     with col_l1:
         top_limit_scan = st.slider("Jumlah Saham Dipindai:", min_value=20, max_value=200, value=50, step=10)
-        if st.button("🚀 Jalankan PemeringKATAN ML Universe"):
+        if st.button("🚀 Jalankan Pemeringkatan ML Universe"):
             with st.spinner(f"Melatih XGBoost ML pada {top_limit_scan} saham..."):
                 st.session_state['ml_leaderboard'] = massive_ml_ranking(all_ihsg_universe, top_limit=top_limit_scan)
     with col_l2:
@@ -857,11 +906,12 @@ with tab2:
             st.dataframe(st.session_state['ml_leaderboard'], use_container_width=True)
 
 # ==========================================
-# TAB 3: CHART ANALITIKAL PORTOFOLIO (REAL-TIME)
+# TAB 3: CHART ANALITIKAL PORTOFOLIO (REAL-TIME & COMPOUNDING AVERAGE)
 # ==========================================
 with tab3:
-    st.subheader("📈 Chart Analitikal & Monitor Posisi Portofolio (Real-Time)")
-    df_open_chart = df_journal[df_journal['Status'] == 'OPEN'].copy() if not df_journal.empty else pd.DataFrame()
+    st.subheader("📈 Chart Analitikal & Monitor Posisi Portofolio (Compounding Average)")
+    df_open_raw = df_journal[df_journal['Status'] == 'OPEN'].copy() if not df_journal.empty else pd.DataFrame()
+    df_open_chart = aggregate_compounding_average(df_open_raw)
     
     if not df_open_chart.empty:
         available_tickers = df_open_chart['Ticker'].unique().tolist()
@@ -878,12 +928,15 @@ with tab3:
             pnl_rp = float(pos_row['PnL (Rp)'])
             cost_total = entry_p * vol_l
             pnl_pct = (pnl_rp / cost_total * 100) if cost_total > 0 else 0.0
+            num_pos = pos_row.get('Jumlah Posisi', 1)
             
             st.markdown('<div class="mini-card">', unsafe_allow_html=True)
-            st.metric("HARGA ENTRY", f"Rp {entry_p:,.0f}")
+            st.caption(f"<b>STATUS DEPLOYMENT:</b> {num_pos} Posisi Dimerge (Compounding Average)", unsafe_allow_html=True)
+            st.metric("RATA-RATA HARGA ENTRY", f"Rp {entry_p:,.2f}")
             st.metric("HARGA TERKINI", f"Rp {curr_p:,.0f}", delta=f"{((curr_p - entry_p)/entry_p*100):+.2f}%")
-            st.metric("TARGET TP (2x RISK)", f"Rp {tp_p:,.0f}", delta=f"{((tp_p - curr_p)/curr_p*100):+.2f}% Ke TP")
-            st.metric("STOP LOSS (2x ATR)", f"Rp {sl_p:,.0f}", delta=f"{((sl_p - curr_p)/curr_p*100):+.2f}% Ke SL", delta_color="inverse")
+            st.metric("RATA-RATA TARGET TP", f"Rp {tp_p:,.2f}", delta=f"{((tp_p - curr_p)/curr_p*100):+.2f}% Ke TP")
+            st.metric("RATA-RATA STOP LOSS", f"Rp {sl_p:,.2f}", delta=f"{((sl_p - curr_p)/curr_p*100):+.2f}% Ke SL", delta_color="inverse")
+            st.metric("TOTAL MODAL POSISI", f"Rp {cost_total:,.0f}")
             st.metric("FLOATING PnL POSISI", f"Rp {pnl_rp:,.0f}", delta=f"{pnl_pct:+.2f}%")
             st.markdown('</div>', unsafe_allow_html=True)
             
@@ -908,12 +961,12 @@ with tab3:
                     if 'VWAP' in raw_df_c.columns:
                         fig.add_trace(go.Scatter(x=raw_df_c.index, y=raw_df_c['VWAP'], line=dict(color='#38BDF8', width=2), name='Garis VWAP'))
                         
-                    # Garis Acuan Entry, TP, & SL
-                    fig.add_hline(y=entry_p, line_dash="dash", line_color="#00E676", annotation_text=f"Entry: Rp {entry_p:,.0f}", annotation_position="top left")
-                    fig.add_hline(y=tp_p, line_dash="dash", line_color="#00B0FF", annotation_text=f"Target TP: Rp {tp_p:,.0f}", annotation_position="top left")
-                    fig.add_hline(y=sl_p, line_dash="dash", line_color="#FF1744", annotation_text=f"Stop Loss: Rp {sl_p:,.0f}", annotation_position="bottom left")
+                    # Garis Acuan Compounding Average Entry, TP, & SL
+                    fig.add_hline(y=entry_p, line_dash="dash", line_color="#00E676", annotation_text=f"Rata-rata Entry: Rp {entry_p:,.2f}", annotation_position="top left")
+                    fig.add_hline(y=tp_p, line_dash="dash", line_color="#00B0FF", annotation_text=f"Rata-rata Target TP: Rp {tp_p:,.2f}", annotation_position="top left")
+                    fig.add_hline(y=sl_p, line_dash="dash", line_color="#FF1744", annotation_text=f"Rata-rata Stop Loss: Rp {sl_p:,.2f}", annotation_position="bottom left")
                     
-                    fig.update_layout(title=f"Chart Live 1-Menit: {selected_chart_ticker}", yaxis_title="Harga (IDR)", xaxis_rangeslider_visible=False, height=500, template="plotly_dark", margin=dict(l=10, r=10, t=40, b=10))
+                    fig.update_layout(title=f"Chart Live 1-Menit: {selected_chart_ticker} (Compounding Average)", yaxis_title="Harga (IDR)", xaxis_rangeslider_visible=False, height=500, template="plotly_dark", margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.warning(f"Data intraday 1-menit untuk {selected_chart_ticker} sedang tidak tersedia di bursa.")
@@ -923,7 +976,6 @@ with tab3:
     else:
         st.info("💡 Belum ada posisi OPEN di Portofolio. Silakan lakukan pemindaian di **Tab 1 (Screener)** lalu klik **`⚡ AUTO-DEPLOY`** untuk mengaktifkan chart analitikal portofolio real-time.")
         
-        # Display fallback radar from default watchlist
         st.markdown("---")
         st.subheader("📊 Radar Intraday Pantauan Default (Watchlist)")
         live_market_data = pull_live_data(WATCHLIST_1M)
@@ -976,26 +1028,33 @@ with tab4:
         """)
 
 # ==========================================
-# TAB 5: PORTOFOLIO & HIGH-FREQUENCY LIVE GUARD
+# TAB 5: PORTOFOLIO & COMPOUNDING AVERAGE ENGINE
 # ==========================================
 with tab5:
-    st.subheader("📂 Posisi Aktif & High-Frequency Real-Time Live Guard")
+    st.subheader("📂 Posisi Aktif & Compounding Average Risk Engine")
     df_journal, exec_events = auto_execute_tp_sl_guard(df_journal)
     
-    df_open = df_journal[df_journal['Status'] == 'OPEN'].copy() if not df_journal.empty else pd.DataFrame()
-    if not df_open.empty:
-        col_p1, col_p2 = st.columns([3, 1])
+    df_open_raw = df_journal[df_journal['Status'] == 'OPEN'].copy() if not df_journal.empty else pd.DataFrame()
+    df_open_agg = aggregate_compounding_average(df_open_raw)
+    
+    if not df_open_agg.empty:
+        col_p1, col_p2 = st.columns([3.2, 1.2])
         with col_p1:
-            st.caption(f"<span class='live-pulse-hft'></span> <b>Harga Live & Floating PnL ter-stream secara REAL-TIME SETIAP 15 DETIK dari Bursa (Tick: {macro_info['last_tick_time']}):</b>", unsafe_allow_html=True)
-            st.dataframe(df_open[['ID', 'Tanggal Entry', 'Ticker', 'Harga Entry', 'Harga Closing/Exit', 'Target TP', 'Stop Loss', 'Volume', 'PnL (Rp)']], use_container_width=True, hide_index=True)
+            st.caption(f"<span class='live-pulse-hft'></span> <b>Posisi Dimerge Otomatis Menggunakan Teori Compounding Average (Tick: {macro_info['last_tick_time']}):</b>", unsafe_allow_html=True)
+            
+            # Display consolidated Compounding Average Portfolio table
+            disp_cols = ['ID', 'Tanggal Entry', 'Ticker', 'Harga Entry', 'Harga Closing/Exit', 'Target TP', 'Stop Loss', 'Volume', 'Total Modal (Rp)', 'PnL (Rp)', 'PnL (%)', 'Keterangan Sistem']
+            st.dataframe(df_open_agg[disp_cols], use_container_width=True, hide_index=True)
+            
         with col_p2:
             st.markdown('<div class="mini-card">', unsafe_allow_html=True)
-            tot_capital_deployed = float((df_open['Harga Entry'] * df_open['Volume']).sum())
-            tot_floating_pnl = float(df_open['PnL (Rp)'].sum())
+            tot_capital_deployed = float(df_open_agg['Total Modal (Rp)'].sum())
+            tot_floating_pnl = float(df_open_agg['PnL (Rp)'].sum())
             tot_pnl_pct = (tot_floating_pnl / tot_capital_deployed * 100) if tot_capital_deployed > 0 else 0.0
             
             st.metric("TOTAL MODAL TERPAKAI", f"Rp {tot_capital_deployed:,.0f}")
             st.metric("TOTAL FLOATING PnL", f"Rp {tot_floating_pnl:,.0f}", delta=f"{tot_pnl_pct:+.2f}% DARI MODAL")
+            st.metric("JUMLAH POSISI UNIK", f"{len(df_open_agg)} Ticker ({len(df_open_raw)} Entry)")
             st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("Tidak ada posisi OPEN. Modal 100% Cash.")
@@ -1013,4 +1072,4 @@ with tab5:
         st.info("Jurnal transaksi tertutup bersih.")
 
 st.markdown("---")
-st.caption("⚡ **PRO QUANT TERMINAL v15.0 — PORTFOLIO ANALYTICAL CHARTS & ENHANCED METRICS BY XPINONTOAN QUANT DESK.**")
+st.caption("⚡ **PRO QUANT TERMINAL v16.0 — COMPOUNDING AVERAGE PORTFOLIO ENGINE BY XPINONTOAN QUANT DESK.**")
