@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # ==========================================
 # 1. DESIGN SYSTEM: MINIMALIST + WATERMARK XPINONTOAN + ZERO FLICKER
 # ==========================================
-st.set_page_config(page_title="Pro Quant Terminal — Compounding Average", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Pro Quant Terminal — Institutional Desk", layout="wide", page_icon="⚡")
 
 st.markdown("""
 <style>
@@ -79,6 +79,14 @@ st.markdown("""
     .macro-score-card {
         background: linear-gradient(135deg, rgba(14, 165, 233, 0.15) 0%, rgba(15, 23, 42, 0.9) 100%);
         border: 1px solid #0EA5E9;
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+    }
+
+    .institutional-eval-card {
+        background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(15, 23, 42, 0.95) 100%);
+        border: 1px solid #22C55E;
         border-radius: 8px;
         padding: 16px;
         margin-bottom: 16px;
@@ -185,11 +193,12 @@ if 'ml_leaderboard' not in st.session_state:
 
 # AUTO-REFRESH EXACTLY EVERY 15 SECONDS (PAUSED DURING ACTIVE SCREENER SCAN)
 if not st.session_state['is_scanning']:
-    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v160")
+    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v170")
 else:
     refresh_count = 0
 
 JOURNAL_FILE = 'trade_journal_v5.csv'
+DAILY_SNAPSHOT_FILE = 'daily_closing_snapshots_v1.csv'
 
 def init_journal():
     if not os.path.exists(JOURNAL_FILE):
@@ -199,6 +208,13 @@ def init_journal():
             'Volume', 'PnL (Rp)', 'Keterangan Sistem', 'Sesuai Rule?'
         ])
         df.to_csv(JOURNAL_FILE, index=False)
+        
+    if not os.path.exists(DAILY_SNAPSHOT_FILE):
+        df_snap = pd.DataFrame(columns=[
+            'Tanggal Snapshot', 'Waktu Snapshot', 'Total Modal (Rp)', 'Total Floating PnL (Rp)', 
+            'Floating Return (%)', 'Jumlah Posisi Open', 'Skor Makro', 'Rezim Pasar HMM', 'Evaluasi Trader Institusi'
+        ])
+        df_snap.to_csv(DAILY_SNAPSHOT_FILE, index=False)
 
 init_journal()
 
@@ -217,6 +233,16 @@ def load_journal():
                 'Volume', 'PnL (Rp)', 'Keterangan Sistem', 'Sesuai Rule?'
             ])
 
+@st.cache_data(ttl=2)
+def load_daily_snapshots():
+    if os.path.exists(DAILY_SNAPSHOT_FILE):
+        try: return pd.read_csv(DAILY_SNAPSHOT_FILE)
+        except Exception: pass
+    return pd.DataFrame(columns=[
+        'Tanggal Snapshot', 'Waktu Snapshot', 'Total Modal (Rp)', 'Total Floating PnL (Rp)', 
+        'Floating Return (%)', 'Jumlah Posisi Open', 'Skor Makro', 'Rezim Pasar HMM', 'Evaluasi Trader Institusi'
+    ])
+
 def save_journal(df):
     try:
         fd, tmp = tempfile.mkstemp(prefix='journal_', suffix='.csv', dir='.')
@@ -231,7 +257,22 @@ def save_journal(df):
         logging.exception("Failed to save journal: %s", e)
         raise
 
+def save_daily_snapshot(df_snap):
+    try:
+        fd, tmp = tempfile.mkstemp(prefix='snapshot_', suffix='.csv', dir='.')
+        os.close(fd)
+        df_snap.to_csv(tmp, index=False)
+        os.replace(tmp, DAILY_SNAPSHOT_FILE)
+        try:
+            st.cache_data.clear()
+        except Exception:
+            pass
+    except Exception as e:
+        logging.exception("Failed to save daily snapshot: %s", e)
+        raise
+
 df_journal = load_journal()
+df_snapshots = load_daily_snapshots()
 
 # ==========================================
 # 2. REAL-TIME MACRO & KURS CONNECTOR (15s TTL)
@@ -684,7 +725,6 @@ def update_portfolio_live_prices(df_j):
                 
     return df_j
 
-# ENGINE COMPOUNDING AVERAGE: MENGGABUNGKAN SAHAM KEMBAR DI PORTOFOLIO MENJADI 1 POSISI TERAMAT RATA-RATA
 def aggregate_compounding_average(df_open):
     if df_open.empty:
         return df_open
@@ -732,6 +772,65 @@ def aggregate_compounding_average(df_open):
             
     res_df = pd.DataFrame(aggregated_rows)
     return res_df
+
+# ENGINE EVALUASI HARIAN ALA TRADER AHLL INSTITUSI & SNAPSHOT HARIAN 16:30 WIB
+def generate_institutional_daily_evaluation(df_open_agg, macro_info, regime_label):
+    if df_open_agg.empty:
+        return "⚡ POSISI PORTOFOLIO NIKEL (100% CASH): Tidak ada posisi terbuka saat penutupan bursa. Modal berada dalam perlindungan likuiditas penuh."
+        
+    tot_capital = float(df_open_agg['Total Modal (Rp)'].sum())
+    tot_pnl_rp = float(df_open_agg['PnL (Rp)'].sum())
+    tot_return_pct = (tot_pnl_rp / tot_capital * 100) if tot_capital > 0 else 0.0
+    num_positions = len(df_open_agg)
+    
+    # Quantitative Risk Metrics
+    risk_level = "RENDAH (Defensif)" if tot_return_pct >= 0 else "MODERAT (Perlunya Rebalancing)"
+    if tot_return_pct < -3.0: risk_level = "TINGGI (Proteksi Modal Diperlukan)"
+    
+    best_pos = df_open_agg.sort_values(by='PnL (%)', ascending=False).iloc[0]
+    worst_pos = df_open_agg.sort_values(by='PnL (%)', ascending=True).iloc[0]
+    
+    eval_text = f"""
+    🏦 **EVALUASI EKSEKUTIF TRADER INSTITUSI (SNAPSHOT PENUTUPAN BURSA 16:30 WIB):**
+    
+    • **Ringkasan Kinerja Portofolio**: Portofolio mengelola **{num_positions} ticker aktif** dengan total modal terpakai **Rp {tot_capital:,.0f}**. Hasil penutupan harian mencatatkan floating PnL sebesar **Rp {tot_pnl_rp:,.0f} ({tot_return_pct:+.2f}% dari modal)**.
+    • **Kontributor Utama**: Performansi terbaik dipimpin oleh **{best_pos['Ticker']}** ({best_pos['PnL (%)']:+.2f}%), sedangkan emiten yang membutuhkan pengawasan ketat adalah **{worst_pos['Ticker']}** ({worst_pos['PnL (%)']:+.2f}%).
+    • **Analisis Rezim & Makro Alignment**: Keselarasan Skor Makro Integrated ({macro_info['macro_score']}/100) dan Rezim HMM **{regime_label}** mengonfirmasi bahwa profil risiko portofolio berada dalam kategori **{risk_level}**.
+    • **Rekomendasi Strategis Besok Pagi**: Tetap pertahankan trailing stop/TP otomatis. Modal compounding dipertahankan tanpa perlu ekspos risiko berlebih sebelum konfirmasi pembukaan bursa besok.
+    """
+    return eval_text.strip()
+
+def check_and_record_daily_snapshot(df_open_agg, macro_info, regime_label, df_snapshots):
+    now = datetime.now()
+    today_str = now.strftime('%Y-%m-%d')
+    time_str = now.strftime('%H:%M:%S')
+    
+    # Check if 16:30 snapshot already recorded today
+    if not df_snapshots.empty and 'Tanggal Snapshot' in df_snapshots.columns:
+        if today_str in df_snapshots['Tanggal Snapshot'].values:
+            return df_snapshots
+            
+    # Trigger snapshot if time >= 16:30 or when manually requested
+    if now.hour >= 16 and now.minute >= 30:
+        tot_capital = float(df_open_agg['Total Modal (Rp)'].sum()) if not df_open_agg.empty else 0.0
+        tot_pnl = float(df_open_agg['PnL (Rp)'].sum()) if not df_open_agg.empty else 0.0
+        return_pct = (tot_pnl / tot_capital * 100) if tot_capital > 0 else 0.0
+        eval_eval = generate_institutional_daily_evaluation(df_open_agg, macro_info, regime_label)
+        
+        new_snap = {
+            'Tanggal Snapshot': today_str,
+            'Waktu Snapshot': time_str,
+            'Total Modal (Rp)': tot_capital,
+            'Total Floating PnL (Rp)': tot_pnl,
+            'Floating Return (%)': round(return_pct, 2),
+            'Jumlah Posisi Open': len(df_open_agg),
+            'Skor Makro': macro_info['macro_score'],
+            'Rezim Pasar HMM': regime_label,
+            'Evaluasi Trader Institusi': eval_eval
+        }
+        df_snapshots = pd.concat([df_snapshots, pd.DataFrame([new_snap])], ignore_index=True)
+        save_daily_snapshot(df_snapshots)
+    return df_snapshots
 
 def auto_execute_tp_sl_guard(df_j):
     df_j = update_portfolio_live_prices(df_j)
@@ -808,7 +907,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Pemeringkatan ML Universe (941 Saham)", 
     "📈 Chart Analitikal Portofolio (Real-Time)", 
     "🏦 Desk Makro-Mikro & Risk-On/Off",
-    "📂 Portofolio & High-Frequency Live Guard"
+    "📂 Portofolio & Jurnal Penutupan 16:30 WIB"
 ])
 
 all_ihsg_universe = load_universe()
@@ -961,7 +1060,6 @@ with tab3:
                     if 'VWAP' in raw_df_c.columns:
                         fig.add_trace(go.Scatter(x=raw_df_c.index, y=raw_df_c['VWAP'], line=dict(color='#38BDF8', width=2), name='Garis VWAP'))
                         
-                    # Garis Acuan Compounding Average Entry, TP, & SL
                     fig.add_hline(y=entry_p, line_dash="dash", line_color="#00E676", annotation_text=f"Rata-rata Entry: Rp {entry_p:,.2f}", annotation_position="top left")
                     fig.add_hline(y=tp_p, line_dash="dash", line_color="#00B0FF", annotation_text=f"Rata-rata Target TP: Rp {tp_p:,.2f}", annotation_position="top left")
                     fig.add_hline(y=sl_p, line_dash="dash", line_color="#FF1744", annotation_text=f"Rata-rata Stop Loss: Rp {sl_p:,.2f}", annotation_position="bottom left")
@@ -1028,7 +1126,7 @@ with tab4:
         """)
 
 # ==========================================
-# TAB 5: PORTOFOLIO & COMPOUNDING AVERAGE ENGINE
+# TAB 5: PORTOFOLIO & JURNAL PENUTUPAN 16:30 WIB
 # ==========================================
 with tab5:
     st.subheader("📂 Posisi Aktif & Compounding Average Risk Engine")
@@ -1037,12 +1135,13 @@ with tab5:
     df_open_raw = df_journal[df_journal['Status'] == 'OPEN'].copy() if not df_journal.empty else pd.DataFrame()
     df_open_agg = aggregate_compounding_average(df_open_raw)
     
+    # TRIGGER DAILY 16:30 WIB CLOSING SNAPSHOT & INSTITUTIONAL EVALUATION
+    df_snapshots = check_and_record_daily_snapshot(df_open_agg, macro_info, hmm_label, df_snapshots)
+    
     if not df_open_agg.empty:
         col_p1, col_p2 = st.columns([3.2, 1.2])
         with col_p1:
             st.caption(f"<span class='live-pulse-hft'></span> <b>Posisi Dimerge Otomatis Menggunakan Teori Compounding Average (Tick: {macro_info['last_tick_time']}):</b>", unsafe_allow_html=True)
-            
-            # Display consolidated Compounding Average Portfolio table
             disp_cols = ['ID', 'Tanggal Entry', 'Ticker', 'Harga Entry', 'Harga Closing/Exit', 'Target TP', 'Stop Loss', 'Volume', 'Total Modal (Rp)', 'PnL (Rp)', 'PnL (%)', 'Keterangan Sistem']
             st.dataframe(df_open_agg[disp_cols], use_container_width=True, hide_index=True)
             
@@ -1060,7 +1159,45 @@ with tab5:
         st.info("Tidak ada posisi OPEN. Modal 100% Cash.")
         
     st.markdown("---")
-    st.subheader("📈 Jurnal Realisasi Trade")
+    st.subheader("🏛️ Evaluasi Harian Ala Trader Ahli Institusi (Snapshot Penutupan Bursa 16:30 WIB)")
+    
+    # Render Current Day Executive Institutional Evaluation Card
+    curr_eval_text = generate_institutional_daily_evaluation(df_open_agg, macro_info, hmm_label)
+    st.markdown('<div class="institutional-eval-card">', unsafe_allow_html=True)
+    st.markdown(curr_eval_text)
+    
+    col_sn1, col_sn2 = st.columns([1, 4])
+    with col_sn1:
+        if st.button("📸 Ambil Snapshot 16:30 Manual Now"):
+            now = datetime.now()
+            tot_capital = float(df_open_agg['Total Modal (Rp)'].sum()) if not df_open_agg.empty else 0.0
+            tot_pnl = float(df_open_agg['PnL (Rp)'].sum()) if not df_open_agg.empty else 0.0
+            return_pct = (tot_pnl / tot_capital * 100) if tot_capital > 0 else 0.0
+            
+            manual_snap = {
+                'Tanggal Snapshot': now.strftime('%Y-%m-%d'),
+                'Waktu Snapshot': now.strftime('%H:%M:%S'),
+                'Total Modal (Rp)': tot_capital,
+                'Total Floating PnL (Rp)': tot_pnl,
+                'Floating Return (%)': round(return_pct, 2),
+                'Jumlah Posisi Open': len(df_open_agg),
+                'Skor Makro': macro_info['macro_score'],
+                'Rezim Pasar HMM': hmm_label,
+                'Evaluasi Trader Institusi': curr_eval_text
+            }
+            df_snapshots = pd.concat([df_snapshots, pd.DataFrame([manual_snap])], ignore_index=True)
+            save_daily_snapshot(df_snapshots)
+            st.success("✅ Snapshot Penutupan Harian Berhasil Disimpan!")
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Display Daily Snapshots Log Table
+    if not df_snapshots.empty:
+        st.subheader("📅 Riwayat Snapshot Penutupan Bursa (16:30 WIB)")
+        st.dataframe(df_snapshots[['Tanggal Snapshot', 'Waktu Snapshot', 'Total Modal (Rp)', 'Total Floating PnL (Rp)', 'Floating Return (%)', 'Jumlah Posisi Open', 'Skor Makro', 'Rezim Pasar HMM']], use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+    st.subheader("📈 Jurnal Realisasi Trade (Closed Trades)")
     df_closed = df_journal[df_journal['Status'] == 'CLOSED'].copy() if not df_journal.empty else pd.DataFrame()
     if not df_closed.empty:
         st.dataframe(df_closed[['ID', 'Tanggal Exit', 'Ticker', 'Harga Entry', 'Harga Closing/Exit', 'PnL (Rp)', 'Keterangan Sistem']], use_container_width=True, hide_index=True)
@@ -1072,4 +1209,4 @@ with tab5:
         st.info("Jurnal transaksi tertutup bersih.")
 
 st.markdown("---")
-st.caption("⚡ **PRO QUANT TERMINAL v16.0 — COMPOUNDING AVERAGE PORTFOLIO ENGINE BY XPINONTOAN QUANT DESK.**")
+st.caption("⚡ **PRO QUANT TERMINAL v17.0 — INSTITUTIONAL DAILY 16:30 CLOSING EVALUATION DESK BY XPINONTOAN QUANT DESK.**")
