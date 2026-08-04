@@ -375,6 +375,60 @@ def run_adaptive_quant_engine():
     config = engine.auto_adjust_strategy(regime_idx, regime_label)
     return regime_idx, regime_label, config
 
+@st.cache_data(ttl=60, show_spinner=False) 
+def pull_live_data(tickers):
+    """Fungsi Penarik Data Real-Time Asinkron untuk Dasbor Utama"""
+    market_data = []
+    
+    try:
+        # Mengunduh data interval 1-menit yang sedang berjalan hari ini
+        raw_data = yf.download(tickers, period="1d", interval="1m", group_by='ticker', threads=True, progress=False)
+        
+        for ticker in tickers:
+            if len(tickers) == 1:
+                df = raw_data.dropna()
+            else:
+                if isinstance(raw_data.columns, pd.MultiIndex):
+                    if ticker not in raw_data.columns.levels[0]: continue
+                    df = raw_data[ticker].dropna()
+                else:
+                    df = raw_data.dropna()
+                
+            if df.empty or len(df) < 2: continue
+            
+            # Harga Terkini (Bar 1 menit terakhir)
+            current_price = float(df['Close'].iloc[-1])
+            open_price = float(df['Open'].iloc[0]) # Harga buka hari ini
+            
+            # Kalkulasi VWAP Live
+            v = df['Volume']
+            tp = (df['High'] + df['Low'] + df['Close']) / 3
+            cum_v = v.cumsum()
+            vwap_s = (v * tp).cumsum() / cum_v.replace(0, np.nan)
+            df['VWAP'] = vwap_s
+            current_vwap = float(df['VWAP'].iloc[-1]) if not np.isnan(df['VWAP'].iloc[-1]) else current_price
+            
+            # Menghitung % Perubahan dari harga buka
+            pct_change = ((current_price - open_price) / open_price) * 100 if open_price != 0 else 0.0
+            
+            # Jarak harga ke VWAP
+            dist_vwap = ((current_price - current_vwap) / current_vwap) * 100 if current_vwap != 0 else 0.0
+            
+            market_data.append({
+                'Ticker': ticker,
+                'Harga Live (Rp)': round(current_price, 0),
+                'Perubahan (%)': round(pct_change, 2),
+                'Level VWAP': round(current_vwap, 0),
+                'Jarak ke VWAP (%)': round(dist_vwap, 2),
+                'Volume 1M Terakhir': int(df['Volume'].iloc[-1]),
+                '_raw_df': df # Simpan dataframe untuk grafik
+            })
+    except Exception as e:
+        logging.exception("pull_live_data error: %s", e)
+            
+    return market_data
+
+
 # ==========================================
 # 4. HIGH-PRECISION FEATURE INJECTION & ML ENGINE
 # ==========================================
