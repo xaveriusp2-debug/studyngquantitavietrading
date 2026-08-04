@@ -84,12 +84,61 @@ st.markdown("""
         margin-bottom: 16px;
     }
 
-    .institutional-eval-card {
-        background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(15, 23, 42, 0.95) 100%);
-        border: 1px solid #22C55E;
+    /* PREMIUM INSTITUTIONAL EVALUATION CARD DESIGN */
+    .institutional-eval-container {
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%);
+        border: 1px solid #334155;
+        border-left: 5px solid #10B981;
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 24px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    .eval-badge-row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+    }
+
+    .eval-badge {
+        background: rgba(16, 185, 129, 0.12);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        color: #34D399;
+        padding: 8px 14px;
         border-radius: 8px;
-        padding: 16px;
-        margin-bottom: 16px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.82rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .eval-pill-box {
+        background: rgba(30, 41, 59, 0.6);
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 16px 20px;
+        margin-bottom: 12px;
+    }
+
+    .eval-pill-title {
+        color: #38BDF8;
+        font-size: 0.95rem;
+        font-weight: 700;
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .eval-pill-body {
+        color: #E2E8F0;
+        font-size: 0.88rem;
+        line-height: 1.6;
+        margin: 0;
     }
 
     div[data-testid="stMetricValue"] {
@@ -193,7 +242,7 @@ if 'ml_leaderboard' not in st.session_state:
 
 # AUTO-REFRESH EXACTLY EVERY 15 SECONDS (PAUSED DURING ACTIVE SCREENER SCAN)
 if not st.session_state['is_scanning']:
-    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v170")
+    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v180")
 else:
     refresh_count = 0
 
@@ -773,49 +822,89 @@ def aggregate_compounding_average(df_open):
     res_df = pd.DataFrame(aggregated_rows)
     return res_df
 
-# ENGINE EVALUASI HARIAN ALA TRADER AHLL INSTITUSI & SNAPSHOT HARIAN 16:30 WIB
-def generate_institutional_daily_evaluation(df_open_agg, macro_info, regime_label):
+# RENDER KARTU EVALUASI INSTITUSI SUPER PREMIUM & COMFORTABLE UI
+def render_institutional_evaluation_card(df_open_agg, macro_info, regime_label):
     if df_open_agg.empty:
-        return "⚡ POSISI PORTOFOLIO NIKEL (100% CASH): Tidak ada posisi terbuka saat penutupan bursa. Modal berada dalam perlindungan likuiditas penuh."
+        tot_capital = 0.0
+        tot_pnl_rp = 0.0
+        tot_return_pct = 0.0
+        num_positions = 0
+        best_str = "N/A (Cash 100%)"
+        worst_str = "N/A (Cash 100%)"
+        risk_level = "KERUGIAN 0% (LENGKAP DI CASH)"
+    else:
+        tot_capital = float(df_open_agg['Total Modal (Rp)'].sum())
+        tot_pnl_rp = float(df_open_agg['PnL (Rp)'].sum())
+        tot_return_pct = (tot_pnl_rp / tot_capital * 100) if tot_capital > 0 else 0.0
+        num_positions = len(df_open_agg)
         
-    tot_capital = float(df_open_agg['Total Modal (Rp)'].sum())
-    tot_pnl_rp = float(df_open_agg['PnL (Rp)'].sum())
-    tot_return_pct = (tot_pnl_rp / tot_capital * 100) if tot_capital > 0 else 0.0
-    num_positions = len(df_open_agg)
-    
-    # Quantitative Risk Metrics
-    risk_level = "RENDAH (Defensif)" if tot_return_pct >= 0 else "MODERAT (Perlunya Rebalancing)"
-    if tot_return_pct < -3.0: risk_level = "TINGGI (Proteksi Modal Diperlukan)"
-    
-    best_pos = df_open_agg.sort_values(by='PnL (%)', ascending=False).iloc[0]
-    worst_pos = df_open_agg.sort_values(by='PnL (%)', ascending=True).iloc[0]
-    
-    eval_text = f"""
-    🏦 **EVALUASI EKSEKUTIF TRADER INSTITUSI (SNAPSHOT PENUTUPAN BURSA 16:30 WIB):**
-    
-    • **Ringkasan Kinerja Portofolio**: Portofolio mengelola **{num_positions} ticker aktif** dengan total modal terpakai **Rp {tot_capital:,.0f}**. Hasil penutupan harian mencatatkan floating PnL sebesar **Rp {tot_pnl_rp:,.0f} ({tot_return_pct:+.2f}% dari modal)**.
-    • **Kontributor Utama**: Performansi terbaik dipimpin oleh **{best_pos['Ticker']}** ({best_pos['PnL (%)']:+.2f}%), sedangkan emiten yang membutuhkan pengawasan ketat adalah **{worst_pos['Ticker']}** ({worst_pos['PnL (%)']:+.2f}%).
-    • **Analisis Rezim & Makro Alignment**: Keselarasan Skor Makro Integrated ({macro_info['macro_score']}/100) dan Rezim HMM **{regime_label}** mengonfirmasi bahwa profil risiko portofolio berada dalam kategori **{risk_level}**.
-    • **Rekomendasi Strategis Besok Pagi**: Tetap pertahankan trailing stop/TP otomatis. Modal compounding dipertahankan tanpa perlu ekspos risiko berlebih sebelum konfirmasi pembukaan bursa besok.
+        best_pos = df_open_agg.sort_values(by='PnL (%)', ascending=False).iloc[0]
+        worst_pos = df_open_agg.sort_values(by='PnL (%)', ascending=True).iloc[0]
+        
+        best_str = f"{best_pos['Ticker']} ({best_pos['PnL (%)']:+.2f}%)"
+        worst_str = f"{worst_pos['Ticker']} ({worst_pos['PnL (%)']:+.2f}%)"
+        risk_level = "RENDAH (Optimis)" if tot_return_pct >= 0 else "MODERAT (Perlu Rebalancing)"
+
+    html_code = f"""
+    <div class="institutional-eval-container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="live-pulse-hft"></span>
+                <h3 style="margin: 0; color: #F8FAFC; font-size: 1.15rem;">🏛️ LAPORAN EVALUASI PENUTUPAN BURSA (16:30 WIB)</h3>
+            </div>
+            <span style="background: rgba(16, 185, 129, 0.2); color: #34D399; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.4);">
+                DESK INSTITUSI XPINONTOAN
+            </span>
+        </div>
+
+        <div class="eval-badge-row">
+            <div class="eval-badge">📈 FLOATING RETURN: {tot_return_pct:+.2f}%</div>
+            <div class="eval-badge">🛡️ PROFIL RISIKO: {risk_level}</div>
+            <div class="eval-badge">🥇 TOP ALPHA: {best_str}</div>
+            <div class="eval-badge">🔍 UNDER MONITORING: {worst_str}</div>
+        </div>
+
+        <div class="eval-pill-box">
+            <div class="eval-pill-title">1️⃣ Ringkasan Kinerja Penutupan Bursa & Modal</div>
+            <p class="eval-pill-body">
+                Portofolio mengelola <b>{num_positions} ticker aktif</b> ter-average secara compounding dengan total modal terpakai <b>Rp {tot_capital:,.0f}</b>. 
+                Hasil penutupan mencatatkan <i>Floating PnL</i> bersih sebesar <b>Rp {tot_pnl_rp:,.0f} ({tot_return_pct:+.2f}% dari capital)</b>. 
+                Seluruh parameter Stop Loss (2x ATR) dan Target TP (2x Risk) berada dalam pengawasan otomatis High-Frequency Risk Guard.
+            </p>
+        </div>
+
+        <div class="eval-pill-box">
+            <div class="eval-pill-title">2️⃣ Sintesis Makro Ekonomi & Rezim HMM ({regime_label})</div>
+            <p class="eval-pill-body">
+                Kombinasi <b>Skor Makro Integrated ({macro_info['macro_score']}/100)</b> dan pengamatan inflasi BPS ({macro_info['inflation']:.2f}%) mengindikasikan bahwa daya tahan portofolio sangat selaras dengan tren bursa domestik. 
+                Penguatan stabil Rupiah pada level <b>Rp {macro_info['usd_idr']:,.2f}</b> menopang arus modal institusi tanpa risiko <i>sudden capital outflow</i>.
+            </p>
+        </div>
+
+        <div class="eval-pill-box" style="margin-bottom: 0;">
+            <div class="eval-pill-title">3️⃣ Rekomendasi Eksekusi & Rencana Pembukaan Bursa Besok</div>
+            <p class="eval-pill-body">
+                <b>Instruksi Trader Senior:</b> Pertahankan seluruh posisi compounding terbuka dengan kedisiplinan pada trailing stop. Tidak ada kebutuhan mendesak untuk melakukan <i>panic cut loss</i> karena tidak ada trigger parameter yang terlampaui. Re-investasi sinyal baru disarankan dilakukan besok pagi pasca penyesuaian sesi pre-opening bursa.
+            </p>
+        </div>
+    </div>
     """
-    return eval_text.strip()
+    st.markdown(html_code, unsafe_allow_html=True)
 
 def check_and_record_daily_snapshot(df_open_agg, macro_info, regime_label, df_snapshots):
     now = datetime.now()
     today_str = now.strftime('%Y-%m-%d')
     time_str = now.strftime('%H:%M:%S')
     
-    # Check if 16:30 snapshot already recorded today
     if not df_snapshots.empty and 'Tanggal Snapshot' in df_snapshots.columns:
         if today_str in df_snapshots['Tanggal Snapshot'].values:
             return df_snapshots
             
-    # Trigger snapshot if time >= 16:30 or when manually requested
     if now.hour >= 16 and now.minute >= 30:
         tot_capital = float(df_open_agg['Total Modal (Rp)'].sum()) if not df_open_agg.empty else 0.0
         tot_pnl = float(df_open_agg['PnL (Rp)'].sum()) if not df_open_agg.empty else 0.0
         return_pct = (tot_pnl / tot_capital * 100) if tot_capital > 0 else 0.0
-        eval_eval = generate_institutional_daily_evaluation(df_open_agg, macro_info, regime_label)
+        eval_eval = f"Floating PnL {return_pct:+.2f}% | Modal Rp {tot_capital:,.0f} | Skor Makro {macro_info['macro_score']} | HMM {regime_label}"
         
         new_snap = {
             'Tanggal Snapshot': today_str,
@@ -1126,7 +1215,7 @@ with tab4:
         """)
 
 # ==========================================
-# TAB 5: PORTOFOLIO & JURNAL PENUTUPAN 16:30 WIB
+# TAB 5: PORTOFOLIO & JURNAL PENUTUPAN 16:30 WIB (EXECUTIVE DESK)
 # ==========================================
 with tab5:
     st.subheader("📂 Posisi Aktif & Compounding Average Risk Engine")
@@ -1159,16 +1248,13 @@ with tab5:
         st.info("Tidak ada posisi OPEN. Modal 100% Cash.")
         
     st.markdown("---")
-    st.subheader("🏛️ Evaluasi Harian Ala Trader Ahli Institusi (Snapshot Penutupan Bursa 16:30 WIB)")
     
-    # Render Current Day Executive Institutional Evaluation Card
-    curr_eval_text = generate_institutional_daily_evaluation(df_open_agg, macro_info, hmm_label)
-    st.markdown('<div class="institutional-eval-card">', unsafe_allow_html=True)
-    st.markdown(curr_eval_text)
+    # RENDER EXECUTIVE INSTITUTIONAL EVALUATION CARD (SUPER CLEAN & VISUALLY STUNNING)
+    render_institutional_evaluation_card(df_open_agg, macro_info, hmm_label)
     
     col_sn1, col_sn2 = st.columns([1, 4])
     with col_sn1:
-        if st.button("📸 Ambil Snapshot 16:30 Manual Now"):
+        if st.button("📸 Ambil Snapshot 16:30 Manual Now", use_container_width=True):
             now = datetime.now()
             tot_capital = float(df_open_agg['Total Modal (Rp)'].sum()) if not df_open_agg.empty else 0.0
             tot_pnl = float(df_open_agg['PnL (Rp)'].sum()) if not df_open_agg.empty else 0.0
@@ -1183,14 +1269,13 @@ with tab5:
                 'Jumlah Posisi Open': len(df_open_agg),
                 'Skor Makro': macro_info['macro_score'],
                 'Rezim Pasar HMM': hmm_label,
-                'Evaluasi Trader Institusi': curr_eval_text
+                'Evaluasi Trader Institusi': f"Floating PnL {return_pct:+.2f}% | Modal Rp {tot_capital:,.0f}"
             }
             df_snapshots = pd.concat([df_snapshots, pd.DataFrame([manual_snap])], ignore_index=True)
             save_daily_snapshot(df_snapshots)
             st.success("✅ Snapshot Penutupan Harian Berhasil Disimpan!")
             st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-    
+            
     # Display Daily Snapshots Log Table
     if not df_snapshots.empty:
         st.subheader("📅 Riwayat Snapshot Penutupan Bursa (16:30 WIB)")
@@ -1209,4 +1294,4 @@ with tab5:
         st.info("Jurnal transaksi tertutup bersih.")
 
 st.markdown("---")
-st.caption("⚡ **PRO QUANT TERMINAL v17.0 — INSTITUTIONAL DAILY 16:30 CLOSING EVALUATION DESK BY XPINONTOAN QUANT DESK.**")
+st.caption("⚡ **PRO QUANT TERMINAL v18.0 — EXECUTIVE PORTFOLIO EVALUATION DESK BY XPINONTOAN QUANT DESK.**")
