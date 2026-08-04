@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # ==========================================
 # 1. DESIGN SYSTEM: MINIMALIST + WATERMARK XPINONTOAN + ZERO FLICKER
 # ==========================================
-st.set_page_config(page_title="Pro Quant Terminal — Perfect Auto-Rebalancer", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Pro Quant Terminal — Clean Institutional Desk", layout="wide", page_icon="⚡")
 
 st.markdown("""
 <style>
@@ -94,7 +94,7 @@ st.markdown("""
         margin-bottom: 16px;
     }
 
-    /* PREMIUM INSTITUTIONAL EVALUATION CARD DESIGN */
+    /* CLEAN INSTITUTIONAL EVALUATION CARD DESIGN (NO SYMBOLS) */
     .institutional-eval-container {
         background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%);
         border: 1px solid #334155;
@@ -121,9 +121,6 @@ st.markdown("""
         font-family: 'JetBrains Mono', monospace;
         font-size: 0.82rem;
         font-weight: 600;
-        display: flex;
-        align-items: center;
-        gap: 6px;
     }
 
     .eval-pill-box {
@@ -139,16 +136,40 @@ st.markdown("""
         font-size: 0.95rem;
         font-weight: 700;
         margin-bottom: 6px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
+        letter-spacing: 0.02em;
     }
 
     .eval-pill-body {
         color: #E2E8F0;
         font-size: 0.88rem;
-        line-height: 1.6;
+        line-height: 1.65;
         margin: 0;
+    }
+
+    /* CUSTOM ENGAGING ANIMATED LOADER */
+    .custom-loader-card {
+        background: linear-gradient(135deg, rgba(2, 132, 199, 0.15) 0%, rgba(15, 23, 42, 0.95) 100%);
+        border: 1px solid #0284C7;
+        border-radius: 12px;
+        padding: 24px;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    .cyan-pulse-loader {
+        display: inline-block;
+        width: 48px;
+        height: 48px;
+        border: 4px solid rgba(56, 189, 248, 0.2);
+        border-top-color: #38BDF8;
+        border-radius: 50%;
+        animation: spin-glow 0.8s linear infinite;
+    }
+
+    @keyframes spin-glow {
+        0% { transform: rotate(0deg); box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); }
+        50% { box-shadow: 0 0 20px rgba(56, 189, 248, 0.6); }
+        100% { transform: rotate(360deg); box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); }
     }
 
     div[data-testid="stMetricValue"] {
@@ -254,7 +275,7 @@ if 'rebalance_logs' not in st.session_state:
 
 # AUTO-REFRESH EXACTLY EVERY 15 SECONDS (PAUSED DURING ACTIVE SCREENER SCAN)
 if not st.session_state['is_scanning']:
-    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v200")
+    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v210")
 else:
     refresh_count = 0
 
@@ -331,6 +352,22 @@ def save_daily_snapshot(df_snap):
     except Exception as e:
         logging.exception("Failed to save daily snapshot: %s", e)
         raise
+
+def reset_closed_trades_journal():
+    df_j = load_journal()
+    df_open_only = df_j[df_j['Status'] == 'OPEN'].copy() if not df_j.empty else pd.DataFrame(columns=[
+        'ID', 'Tanggal Entry', 'Tanggal Exit', 'Ticker', 'Tipe', 'Status',
+        'Harga Entry', 'Target TP', 'Stop Loss', 'Harga Closing/Exit', 
+        'Volume', 'PnL (Rp)', 'Keterangan Sistem', 'Sesuai Rule?'
+    ])
+    save_journal(df_open_only)
+    
+    # Also reset daily snapshots history if desired
+    df_empty_snap = pd.DataFrame(columns=[
+        'Tanggal Snapshot', 'Waktu Snapshot', 'Total Modal (Rp)', 'Total Floating PnL (Rp)', 
+        'Floating Return (%)', 'Jumlah Posisi Open', 'Skor Makro', 'Rezim Pasar HMM', 'Evaluasi Trader Institusi'
+    ])
+    save_daily_snapshot(df_empty_snap)
 
 df_journal = load_journal()
 df_snapshots = load_daily_snapshots()
@@ -556,11 +593,11 @@ class PerfectAutoRebalancer:
     def phase_1_macro_allocation(self):
         """Phase 1: Menentukan porsi KAS vs SAHAM berbasis HMM Market Regime"""
         if "BEARISH" in self.regime_label:
-            return 0.20 # 20% modal di saham, 80% hold di Kas
+            return 0.20
         elif "SIDEWAYS" in self.regime_label:
-            return 0.50 # 50% modal di saham
+            return 0.50
         else:
-            return 0.90 # 90% modal di saham (Agresif)
+            return 0.90
 
     def phase_2_stock_selection(self, universe_tickers):
         """Phase 2: XGBoost + OBV mencari Top 5 saham dengan probabilitas > 70%"""
@@ -582,7 +619,6 @@ class PerfectAutoRebalancer:
             prob_str = str(stock.get('Probabilitas Menang (ML + Makro)', '70.0%'))
             win_prob = float(re.sub(r'[^\d.]', '', prob_str)) / 100.0 if prob_str else 0.70
             
-            # Half-Kelly Fraction: f* = (p*b - q)/b where b=2 (2x R:R)
             kelly_pct = max(0.10, (win_prob * 2.0 - (1.0 - win_prob)) / 2.0)
             alloc_val = per_stock_budget * (kelly_pct / 2.0)
             
@@ -599,7 +635,7 @@ class PerfectAutoRebalancer:
 
     def phase_4_vwap_execution(self, df_j):
         """Phase 4: Eksekusi Rebalancing Portofolio Berbasis Filter VWAP"""
-        self.execution_logs.append("⚡ [AUTO-REBALANCING INITIATED]")
+        self.execution_logs.append("[AUTO-REBALANCING INITIATED]")
         df_open = df_j[df_j['Status'] == 'OPEN'].copy() if not df_j.empty else pd.DataFrame()
         
         current_portfolio = {}
@@ -610,28 +646,24 @@ class PerfectAutoRebalancer:
                     'Entry': (grp['Harga Entry'] * grp['Volume']).sum() / grp['Volume'].sum()
                 }
                 
-        # 1. Bandingkan Portofolio Saat Ini vs Target Bobot
         for ticker, data in current_portfolio.items():
             if ticker not in self.target_weights:
-                # Saham kehilangan momentum -> JUAL SEMUA (LIQUIDATE)
-                self.execution_logs.append(f"🔴 LIQUIDATE (Jual Semua): {ticker} sebanyak {data['Lot']} lembar (Momentum terdegradasi).")
+                self.execution_logs.append(f"LIQUIDATE (Jual Semua): {ticker} sebanyak {data['Lot']} lembar.")
                 mask = (df_j['Ticker'] == ticker) & (df_j['Status'] == 'OPEN')
                 df_j.loc[mask, 'Status'] = 'CLOSED'
                 df_j.loc[mask, 'Tanggal Exit'] = datetime.now().strftime('%Y-%m-%d')
-                df_j.loc[mask, 'Keterangan Sistem'] = '🤖 Rebalancer Liquidated'
+                df_j.loc[mask, 'Keterangan Sistem'] = 'Rebalancer Liquidated'
             elif data['Lot'] > self.target_weights[ticker]['Target_Lot']:
-                # Porsi Overweight -> TRIM
                 sell_lot = data['Lot'] - self.target_weights[ticker]['Target_Lot']
-                self.execution_logs.append(f"🟡 TRIM (Jual Sebagian): {ticker} sebanyak {sell_lot} lembar.")
+                self.execution_logs.append(f"TRIM (Jual Sebagian): {ticker} sebanyak {sell_lot} lembar.")
                 mask = (df_j['Ticker'] == ticker) & (df_j['Status'] == 'OPEN')
                 df_j.loc[mask, 'Volume'] = self.target_weights[ticker]['Target_Lot']
 
-        # 2. Beli saham baru atau tambah muatan (Accumulate)
         for ticker, target in self.target_weights.items():
             curr_lot = current_portfolio.get(ticker, {}).get('Lot', 0)
             if curr_lot < target['Target_Lot']:
                 buy_lot = target['Target_Lot'] - curr_lot
-                self.execution_logs.append(f"🟢 ACCUMULATE (Beli VWAP Sniper): {ticker} sebanyak {buy_lot} lembar (Standby di bawah VWAP).")
+                self.execution_logs.append(f"ACCUMULATE (Beli VWAP Sniper): {ticker} sebanyak {buy_lot} lembar.")
                 
                 new_pos = {
                     'ID': f"REBAL-{datetime.now().strftime('%H%M%S')}-{ticker[:4]}",
@@ -646,12 +678,12 @@ class PerfectAutoRebalancer:
                     'Harga Closing/Exit': target['Harga_Entry'],
                     'Volume': buy_lot,
                     'PnL (Rp)': 0.0,
-                    'Keterangan Sistem': '🤖 Rebalancer VWAP Sniper',
+                    'Keterangan Sistem': 'Rebalancer VWAP Sniper',
                     'Sesuai Rule?': 'Ya'
                 }
                 df_j = pd.concat([df_j, pd.DataFrame([new_pos])], ignore_index=True)
 
-        self.execution_logs.append("✅ [AUTO-REBALANCING SELESAI] Portofolio telah dioptimalkan secara matematis.")
+        self.execution_logs.append("[AUTO-REBALANCING SELESAI] Portofolio telah dioptimalkan secara matematis.")
         return df_j
 
 # ==========================================
@@ -776,17 +808,17 @@ def get_macro_micro_explanation(ticker, last_close, macro_info):
     tech_tickers = ['GOTO.JK', 'BUKA.JK', 'EMTK.JK']
 
     if ticker in coal_tickers:
-        return f"🔥 High Coal Margin: Ditopang harga Newcastle Coal ${macro_info['coal_price']:.2f} (Margin ekspor batu bara kuat)."
+        return f"High Coal Margin: Ditopang harga Newcastle Coal ${macro_info['coal_price']:.2f} per ton (Margin ekspor batu bara kuat)."
     elif ticker in cpo_tickers:
-        return f"🌴 CPO Export Uplift: Keselarasan harga CPO Bursa Malaysia {macro_info['cpo_price']:.2f} MYR (Korelasi positif r > 0.95)."
+        return f"CPO Export Uplift: Keselarasan harga CPO Bursa Malaysia {macro_info['cpo_price']:.2f} MYR per ton (Korelasi positif tinggi)."
     elif ticker in bank_tickers:
-        return f"🏦 BI Rate NIM Support: Diuntungkan stabilitas suku bunga BI {macro_info['bi_rate']:.2f}% (Menjaga keutuhan Margin Bunga Bersih/NIM)."
+        return f"BI Rate NIM Support: Diuntungkan stabilitas suku bunga BI {macro_info['bi_rate']:.2f}% (Menjaga keutuhan Margin Bunga Bersih)."
     elif ticker in consumer_tickers:
-        return f"🛒 Inflation Consumer Resilience: Inflasi inti terkendali {macro_info['inflation']:.2f}% (Daya beli masyarakat terjaga stabil)."
+        return f"Inflation Consumer Resilience: Inflasi inti terkendali {macro_info['inflation']:.2f}% (Daya beli masyarakat terjaga stabil)."
     elif ticker in tech_tickers:
-        return f"📱 Market Liquidity & Tech Rebound: Likuiditas pasar di sektor teknologi terakomodasi dalam rezim {macro_info['risk_status'].split()[0]}."
+        return f"Market Liquidity & Tech Rebound: Likuiditas pasar di sektor teknologi terakomodasi dalam rezim makro positif."
     else:
-        return f"🟢 Macro-Micro Alignment: Sesuai dengan Skor Makro Integrated ({macro_info['macro_score']}/100) & Penguatan Tren."
+        return f"Macro-Micro Alignment: Sesuai dengan Skor Makro Integrated ({macro_info['macro_score']}/100) dan Penguatan Tren."
 
 # HIGH-PRECISION SCREENER ENGINE WITH PRIORITY SCAN LOCK
 def run_screener_engine_full(capital, tickers_to_scan, macro_info, adaptive_config):
@@ -833,8 +865,8 @@ def run_screener_engine_full(capital, tickers_to_scan, macro_info, adaptive_conf
                             'Ticker': ticker,
                             'Harga Entry': round(last_close, 0),
                             'Probabilitas Menang (ML + Makro)': f"{combined_win_prob:.1f}%",
-                            'OBV Smart Money': '✅ Accumulating' if smart_money else '⚠️ Neutral',
-                            'Golden Cross EMA': '✅ Bullish' if golden_cross else '🟢 Align',
+                            'OBV Smart Money': 'Accumulating' if smart_money else 'Neutral',
+                            'Golden Cross EMA': 'Bullish' if golden_cross else 'Align',
                             'RSI (14)': f"{rsi_val:.1f}",
                             'Dynamic SL (2x ATR)': sl_price,
                             'Target TP (2x Risk)': tp_price,
@@ -853,15 +885,15 @@ def run_screener_engine_full(capital, tickers_to_scan, macro_info, adaptive_conf
         res_df = pd.DataFrame([
             {
                 'Ticker': 'BREN.JK', 'Harga Entry': 9500.0, 'Probabilitas Menang (ML + Makro)': '78.5%',
-                'OBV Smart Money': '✅ Accumulating', 'Golden Cross EMA': '✅ Bullish', 'RSI (14)': '62.4',
+                'OBV Smart Money': 'Accumulating', 'Golden Cross EMA': 'Bullish', 'RSI (14)': '62.4',
                 'Dynamic SL (2x ATR)': 9200.0, 'Target TP (2x Risk)': 10100.0, 'Kelly Lot': '1,000 lembar',
-                'Analisis Makro-Mikro Ekonomi': f"🔥 Renewable Energy Surge: Ditopang tren energi hijau & Skor Makro Integrated ({macro_info['macro_score']}/100)."
+                'Analisis Makro-Mikro Ekonomi': f"Renewable Energy Surge: Ditopang tren energi hijau dan Skor Makro Integrated ({macro_info['macro_score']}/100)."
             },
             {
                 'Ticker': 'AMMN.JK', 'Harga Entry': 10500.0, 'Probabilitas Menang (ML + Makro)': '72.2%',
-                'OBV Smart Money': '✅ Accumulating', 'Golden Cross EMA': '✅ Bullish', 'RSI (14)': '58.1',
+                'OBV Smart Money': 'Accumulating', 'Golden Cross EMA': 'Bullish', 'RSI (14)': '58.1',
                 'Dynamic SL (2x ATR)': 10180.0, 'Target TP (2x Risk)': 11140.0, 'Kelly Lot': '900 lembar',
-                'Analisis Makro-Mikro Ekonomi': f"⛏️ Mining Sector Uplift: Ditopang permintaan tembaga & komoditas energi global (${macro_info['coal_price']:.2f})."
+                'Analisis Makro-Mikro Ekonomi': f"Mining Sector Uplift: Ditopang permintaan tembaga dan komoditas energi global (${macro_info['coal_price']:.2f})."
             }
         ])
         res_df.index = res_df.index + 1
@@ -950,23 +982,25 @@ def aggregate_compounding_average(df_open):
                 'PnL (Rp)': round(tot_pnl_rp, 0),
                 'PnL (%)': round(tot_pnl_pct, 2),
                 'Jumlah Posisi': len(group),
-                'Keterangan Sistem': f'🤖 Compounding Average ({len(group)} Posisi Dimerge)',
+                'Keterangan Sistem': f'Compounding Average ({len(group)} Posisi Dimerge)',
                 'Sesuai Rule?': 'Ya'
             })
             
     res_df = pd.DataFrame(aggregated_rows)
     return res_df
 
-# RENDER KARTU EVALUASI INSTITUSI SUPER PREMIUM & COMFORTABLE UI
+# RENDER KARTU EVALUASI INSTITUSI CLEAN TANPA SIMBOL
 def render_institutional_evaluation_card(df_open_agg, macro_info, regime_label):
+    clean_regime = regime_label.replace("🟢", "").replace("🔴", "").replace("🟡", "").strip()
+    
     if df_open_agg.empty:
         tot_capital = 0.0
         tot_pnl_rp = 0.0
         tot_return_pct = 0.0
         num_positions = 0
-        best_str = "N/A (Cash 100%)"
-        worst_str = "N/A (Cash 100%)"
-        risk_level = "KERUGIAN 0% (LENGKAP DI CASH)"
+        best_str = "Tidak ada posisi aktif"
+        worst_str = "Tidak ada posisi aktif"
+        risk_level = "Kerugian 0 Persen (DanaUtama di Kas)"
     else:
         tot_capital = float(df_open_agg['Total Modal (Rp)'].sum())
         tot_pnl_rp = float(df_open_agg['PnL (Rp)'].sum())
@@ -978,48 +1012,47 @@ def render_institutional_evaluation_card(df_open_agg, macro_info, regime_label):
         
         best_str = f"{best_pos['Ticker']} ({best_pos['PnL (%)']:+.2f}%)"
         worst_str = f"{worst_pos['Ticker']} ({worst_pos['PnL (%)']:+.2f}%)"
-        risk_level = "RENDAH (Optimis)" if tot_return_pct >= 0 else "MODERAT (Perlu Rebalancing)"
+        risk_level = "Rendah (Optimis)" if tot_return_pct >= 0 else "Moderat (Perlu Rebalancing)"
 
     html_code = f"""
     <div class="institutional-eval-container">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <span class="live-pulse-hft"></span>
-                <h3 style="margin: 0; color: #F8FAFC; font-size: 1.15rem;">🏛️ LAPORAN EVALUASI PENUTUPAN BURSA (16:30 WIB)</h3>
-            </div>
-            <span style="background: rgba(16, 185, 129, 0.2); color: #34D399; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.4);">
-                DESK INSTITUSI XPINONTOAN
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
+            <h3 style="margin: 0; color: #F8FAFC; font-size: 1.15rem; font-weight: 700; letter-spacing: 0.02em;">
+                LAPORAN EVALUASI HARIAN PENUTUPAN BURSA
+            </h3>
+            <span style="background: rgba(16, 185, 129, 0.15); color: #34D399; padding: 4px 14px; border-radius: 20px; font-size: 0.78rem; font-weight: 600; border: 1px solid rgba(16, 185, 129, 0.3);">
+                Desk Institusi Xpinontoan
             </span>
         </div>
 
         <div class="eval-badge-row">
-            <div class="eval-badge">📈 FLOATING RETURN: {tot_return_pct:+.2f}%</div>
-            <div class="eval-badge">🛡️ PROFIL RISIKO: {risk_level}</div>
-            <div class="eval-badge">🥇 TOP ALPHA: {best_str}</div>
-            <div class="eval-badge">🔍 UNDER MONITORING: {worst_str}</div>
+            <div class="eval-badge">Floating Return: {tot_return_pct:+.2f}%</div>
+            <div class="eval-badge">Profil Risiko: {risk_level}</div>
+            <div class="eval-badge">Top Performer: {best_str}</div>
+            <div class="eval-badge">Under Monitoring: {worst_str}</div>
         </div>
 
         <div class="eval-pill-box">
-            <div class="eval-pill-title">1️⃣ Ringkasan Kinerja Penutupan Bursa & Modal</div>
+            <div class="eval-pill-title">Ringkasan Kinerja Penutupan Bursa dan Modal</div>
             <p class="eval-pill-body">
-                Portofolio mengelola <b>{num_positions} ticker aktif</b> ter-average secara compounding dengan total modal terpakai <b>Rp {tot_capital:,.0f}</b>. 
-                Hasil penutupan mencatatkan <i>Floating PnL</i> bersih sebesar <b>Rp {tot_pnl_rp:,.0f} ({tot_return_pct:+.2f}% dari capital)</b>. 
-                Seluruh parameter Stop Loss (2x ATR) dan Target TP (2x Risk) berada dalam pengawasan otomatis High-Frequency Risk Guard.
+                Portofolio saat ini mengelola {num_positions} posisi aktif ter-average secara compounding dengan total modal terpakai sebesar Rp {tot_capital:,.0f}. 
+                Hasil penutupan harian mencatatkan keuntungan floating bersih sebesar Rp {tot_pnl_rp:,.0f} atau setara {tot_return_pct:+.2f}% dari total kapital. 
+                Seluruh batas risiko Stop Loss 2x ATR dan target Take Profit 2x Risk berada dalam pengawalan sistem otomatis.
             </p>
         </div>
 
         <div class="eval-pill-box">
-            <div class="eval-pill-title">2️⃣ Sintesis Makro Ekonomi & Rezim HMM ({regime_label})</div>
+            <div class="eval-pill-title">Sintesis Makro Ekonomi dan Rezim Pasar ({clean_regime})</div>
             <p class="eval-pill-body">
-                Kombinasi <b>Skor Makro Integrated ({macro_info['macro_score']}/100)</b>, Newcastle Coal (<b>${macro_info['coal_price']:.2f} USD/Ton</b>), dan CPO Malaysia (<b>{macro_info['cpo_price']:.2f} MYR/Ton</b>) mengindikasikan daya tahan portofolio yang sangat selaras dengan komoditas utama. 
-                Nilai tukar Rupiah ter-stream pada level <b>Rp {macro_info['usd_idr']:,.2f}</b> menopang arus modal institusi secara real-time.
+                Kombinasi skor makro terintegrasi sebesar {macro_info['macro_score']} dari 100, ditambah harga acuan batu bara Newcastle sebesar {macro_info['coal_price']:.2f} USD per ton, dan CPO Malaysia sebesar {macro_info['cpo_price']:.2f} MYR per ton mengindikasikan ketahanan portofolio yang selaras dengan komoditas utama. 
+                Nilai tukar Rupiah ter-stream pada level Rp {macro_info['usd_idr']:,.2f} per Dolar AS, menjaga stabilitas arus modal institusi secara real-time.
             </p>
         </div>
 
         <div class="eval-pill-box" style="margin-bottom: 0;">
-            <div class="eval-pill-title">3️⃣ Rekomendasi Eksekusi & Rencana Pembukaan Bursa Besok</div>
+            <div class="eval-pill-title">Rekomendasi Eksekusi dan Rencana Pembukaan Bursa Besok</div>
             <p class="eval-pill-body">
-                <b>Instruksi Trader Senior:</b> Pertahankan seluruh posisi compounding terbuka dengan kedisiplinan pada trailing stop. Tidak ada kebutuhan mendesak untuk melakukan <i>panic cut loss</i> karena tidak ada trigger parameter yang terlampaui. Re-investasi sinyal baru disarankan dilakukan besok pagi pasca penyesuaian sesi pre-opening bursa.
+                Instruksi Trader Senior: Pertahankan seluruh posisi compounding terbuka dengan kedisiplinan pada trailing stop. Tidak ada kebutuhan mendesak untuk melakukan pemangkasan posisi karena tidak ada parameter risiko yang terlampaui. Alokasi modal baru disarankan dilakukan besok pagi setelah penyesuaian sesi pembukaan bursa.
             </p>
         </div>
     </div>
@@ -1079,14 +1112,14 @@ def auto_execute_tp_sl_guard(df_j):
                 df_j.at[row_idx, 'Status'] = 'CLOSED'
                 df_j.at[row_idx, 'Harga Closing/Exit'] = current_price
                 df_j.at[row_idx, 'PnL (Rp)'] = realized_pnl
-                df_j.at[row_idx, 'Keterangan Sistem'] = '🤖 AUTO-TP'
+                df_j.at[row_idx, 'Keterangan Sistem'] = 'Auto-TP'
                 executed_events.append({'ID': row['ID'], 'Ticker': row['Ticker'], 'Tipe': 'TAKE_PROFIT', 'Harga Exit': current_price, 'PnL (Rp)': realized_pnl})
             elif current_price <= sl_target and sl_target > 0:
                 realized_pnl = (current_price - entry_price) * volume
                 df_j.at[row_idx, 'Status'] = 'CLOSED'
                 df_j.at[row_idx, 'Harga Closing/Exit'] = current_price
                 df_j.at[row_idx, 'PnL (Rp)'] = realized_pnl
-                df_j.at[row_idx, 'Keterangan Sistem'] = '🤖 AUTO-SL'
+                df_j.at[row_idx, 'Keterangan Sistem'] = 'Auto-SL'
                 executed_events.append({'ID': row['ID'], 'Ticker': row['Ticker'], 'Tipe': 'CUT_LOSS', 'Harga Exit': current_price, 'PnL (Rp)': realized_pnl})
         except Exception as e:
             logging.exception("auto_execute_tp_sl_guard error for %s: %s", row.get('Ticker'), e)
@@ -1162,8 +1195,23 @@ with tab1:
         scan_button = st.button("🚀 PINDAI PASAR DENGAN ML HISTORIS BEI", type="primary", use_container_width=True)
         if scan_button:
             st.session_state['is_scanning'] = True
-            with st.spinner("🔍 Memindai seluruh bursa BEI & melatih XGBoost ML 5-Tahun (Refresh Otomatis Dimatikan Sementara)..."):
-                st.session_state['live_signals'] = run_screener_engine_full(capital_input, all_ihsg_universe, macro_info, adaptive_config)
+            
+            # ANIMATED ENGAGING CYAN RADAR LOADER
+            loader_placeholder = st.empty()
+            loader_placeholder.markdown("""
+            <div class="custom-loader-card">
+                <div class="cyan-pulse-loader"></div>
+                <div style="font-weight: 700; color: #38BDF8; font-size: 1.15rem; margin-top: 14px;">
+                    MEMINDAI BURSA BEI & MELATIH MODEL MACHINE LEARNING HISTORIS...
+                </div>
+                <div style="color: #94A3B8; font-size: 0.85rem; margin-top: 6px;">
+                    Mengolah indikator OBV Smart Money, Golden Cross EMA, dan Keselarasan Makro secara presisi di latar belakang.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.session_state['live_signals'] = run_screener_engine_full(capital_input, all_ihsg_universe, macro_info, adaptive_config)
+            loader_placeholder.empty()
             st.session_state['is_scanning'] = False
             st.rerun()
                 
@@ -1208,7 +1256,7 @@ with tab1:
                         df_journal = pd.concat([df_journal, pd.DataFrame(new_trades)], ignore_index=True)
                         save_journal(df_journal)
                         st.session_state['live_signals'] = pd.DataFrame()
-                        st.success(f"✅ Berhasil men-deploy {len(new_trades)} sinyal akurat ke Portofolio Aktif & Risk Guard Engine!")
+                        st.success("✅ Berhasil men-deploy sinyal akurat ke Portofolio Aktif & Risk Guard Engine!")
                         st.rerun()
                 except Exception as err:
                     logging.exception("Deploy to portfolio failed: %s", err)
@@ -1222,8 +1270,17 @@ with tab2:
     with col_l1:
         top_limit_scan = st.slider("Jumlah Saham Dipindai:", min_value=20, max_value=200, value=50, step=10)
         if st.button("🚀 Jalankan Pemeringkatan ML Universe"):
-            with st.spinner(f"Melatih XGBoost ML pada {top_limit_scan} saham..."):
-                st.session_state['ml_leaderboard'] = massive_ml_ranking(all_ihsg_universe, top_limit=top_limit_scan)
+            loader_l = st.empty()
+            loader_l.markdown("""
+            <div class="custom-loader-card">
+                <div class="cyan-pulse-loader"></div>
+                <div style="font-weight: 700; color: #38BDF8; font-size: 1.1rem; margin-top: 12px;">
+                    MELATIH MODEL XGBOOST PADA SAHAM BEI UNIVERSE...
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.session_state['ml_leaderboard'] = massive_ml_ranking(all_ihsg_universe, top_limit=top_limit_scan)
+            loader_l.empty()
     with col_l2:
         if 'ml_leaderboard' in st.session_state and not st.session_state['ml_leaderboard'].empty:
             st.dataframe(st.session_state['ml_leaderboard'], use_container_width=True)
@@ -1321,32 +1378,32 @@ with tab4:
     
     st.subheader("🏆 Pemeringkatan Sektor & Saham Terkait Makro (Macro Alignment Score)")
     macro_rank_data = [
-        {'Peringkat': 1, 'Sektor Target': '🔥 Energy & Coal Mining', 'Katalis Makro': f'Newcastle Coal (${macro_info["coal_price"]:.2f})', 'Saham Utama': 'PTBA.JK, ADRO.JK, ITMG.JK', 'Alignment Score': '92 / 100', 'Status': '🟢 STRONG BUY'},
-        {'Peringkat': 2, 'Sektor Target': '🌴 Agriculture / CPO', 'Katalis Makro': f'CPO Malaysia ({macro_info["cpo_price"]:.2f} MYR)', 'Saham Utama': 'AALI.JK, LSIP.JK, TAPG.JK', 'Alignment Score': '88 / 100', 'Status': '🟢 STRONG BUY'},
-        {'Peringkat': 3, 'Sektor Target': '🏦 Financial & Banking', 'Katalis Makro': 'BI Rate (6.00%) & Liquidity', 'Saham Utama': 'BBCA.JK, BMRI.JK, BBRI.JK', 'Alignment Score': '85 / 100', 'Status': '🟢 OVERWEIGHT'},
-        {'Peringkat': 4, 'Sektor Target': '📱 Telecommunication', 'Katalis Makro': 'Stable Consumer Inflation', 'Saham Utama': 'TLKM.JK, ISAT.JK, EXCL.JK', 'Alignment Score': '74 / 100', 'Status': '🟡 NEUTRAL'},
-        {'Peringkat': 5, 'Sektor Target': '🚗 Automotive & Industrial', 'Katalis Makro': f'USD/IDR Exchange Rate (Rp {macro_info["usd_idr"]:,.2f})', 'Saham Utama': 'ASII.JK, AUTO.JK', 'Alignment Score': '62 / 100', 'Status': '🟡 NEUTRAL'}
+        {'Peringkat': 1, 'Sektor Target': 'Energy & Coal Mining', 'Katalis Makro': f'Newcastle Coal (${macro_info["coal_price"]:.2f})', 'Saham Utama': 'PTBA.JK, ADRO.JK, ITMG.JK', 'Alignment Score': '92 / 100', 'Status': 'STRONG BUY'},
+        {'Peringkat': 2, 'Sektor Target': 'Agriculture / CPO', 'Katalis Makro': f'CPO Malaysia ({macro_info["cpo_price"]:.2f} MYR)', 'Saham Utama': 'AALI.JK, LSIP.JK, TAPG.JK', 'Alignment Score': '88 / 100', 'Status': 'STRONG BUY'},
+        {'Peringkat': 3, 'Sektor Target': 'Financial & Banking', 'Katalis Makro': 'BI Rate (6.00%) & Liquidity', 'Saham Utama': 'BBCA.JK, BMRI.JK, BBRI.JK', 'Alignment Score': '85 / 100', 'Status': 'OVERWEIGHT'},
+        {'Peringkat': 4, 'Sektor Target': 'Telecommunication', 'Katalis Makro': 'Stable Consumer Inflation', 'Saham Utama': 'TLKM.JK, ISAT.JK, EXCL.JK', 'Alignment Score': '74 / 100', 'Status': 'NEUTRAL'},
+        {'Peringkat': 5, 'Sektor Target': 'Automotive & Industrial', 'Katalis Makro': f'USD/IDR Exchange Rate (Rp {macro_info["usd_idr"]:,.2f})', 'Saham Utama': 'ASII.JK, AUTO.JK', 'Alignment Score': '62 / 100', 'Status': 'NEUTRAL'}
     ]
     st.dataframe(pd.DataFrame(macro_rank_data), use_container_width=True, hide_index=True)
     
-    with st.expander("📖 Interpretasi Menyeluruh 5 Pilar Makro-Mikro (Klik untuk memperluas/meminimalkan)"):
+    with st.expander("Interpretasi Menyeluruh 5 Pilar Makro-Mikro (Klik untuk memperluas)"):
         st.markdown(f"""
-        ### 📌 Interpretasi 5 Pilar Makro-Mikro Indonesia:
+        ### Interpretasi 5 Pilar Makro-Mikro Indonesia:
         
-        1. **🏦 Bank Indonesia Rate ({macro_info['bi_rate']:.2f}%)**:
-           - **Interpretasi**: Suku bunga stabil memberikan kepastian margin bunga bersih (*Net Interest Margin* / NIM) untuk sektor perbankan kelas atas (`BBCA.JK`, `BMRI.JK`, `BBRI.JK`, `BBNI.JK`).
+        1. **Bank Indonesia Rate ({macro_info['bi_rate']:.2f}%)**:
+           - Suku bunga stabil memberikan kepastian margin bunga bersih untuk sektor perbankan kelas atas.
         
-        2. **🛒 Inflasi Inti BPS ({macro_info['inflation']:.2f}%)**:
-           - **Interpretasi**: Inflasi berada di dalam rentang target BI ($2.5 \pm 1\%$), menjaga daya beli masyarakat dan daya tahan emiten *consumer goods*.
+        2. **Inflasi Inti BPS ({macro_info['inflation']:.2f}%)**:
+           - Inflasi berada di dalam rentang target BI, menjaga daya beli masyarakat dan daya tahan emiten consumer goods.
         
-        3. **💵 Kurs Nilai Tukar USD/IDR (Rp {macro_info['usd_idr']:,.2f})**:
-           - **Interpretasi**: Volatilitas Rupiah yang stabil ter-stream secara real-time menjadi katalis positif bagi emiten berbasis ekspor komoditas Dolar, sembari membatasi risiko *import cost inflation*.
+        3. **Kurs Nilai Tukar USD/IDR (Rp {macro_info['usd_idr']:,.2f})**:
+           - Volatilitas Rupiah yang stabil ter-stream secara real-time menjadi katalis positif bagi emiten berbasis ekspor komoditas Dolar.
         
-        4. **⛏️ Newcastle Coal Benchmark (${macro_info['coal_price']:.2f})**:
-           - **Interpretasi**: Harga batu bara dunia Newcastle (${macro_info['coal_price']:.2f}/ton) ter-stream secara live dari bursa komoditas.
+        4. **Newcastle Coal Benchmark (${macro_info['coal_price']:.2f})**:
+           - Harga batu bara dunia Newcastle ter-stream secara live dari bursa komoditas.
         
-        5. **🌴 Bursa Malaysia Derivatives CPO ({macro_info['cpo_price']:.2f} MYR)**:
-           - **Interpretasi**: Harga acuan CPO Malaysia ({macro_info['cpo_price']:.2f} MYR/ton) ter-stream secara live dari bursa derivatif Malaysia.
+        5. **Bursa Malaysia Derivatives CPO ({macro_info['cpo_price']:.2f} MYR)**:
+           - Harga acuan CPO Malaysia ter-stream secara live dari bursa derivatif Malaysia.
         """)
 
 # ==========================================
@@ -1371,11 +1428,11 @@ with tab5:
             <div>
                 <h2 style="margin:0; color: #C084FC; font-size: 1.35rem;">⚡ PERFECT AUTO-REBALANCER ENGINE (4-PHASE QUANT)</h2>
                 <p style="margin:4px 0 0 0; color: #E9D5FF; font-size: 0.85rem;">
-                    <b>Phase 1:</b> Macro Cash/Equity Allocation (HMM Weather) | <b>Phase 2:</b> XGBoost + OBV Selection | <b>Phase 3:</b> Half-Kelly & ATR Sizing | <b>Phase 4:</b> VWAP Execution.
+                    Phase 1: Macro Cash/Equity Allocation (HMM Weather) | Phase 2: XGBoost + OBV Selection | Phase 3: Half-Kelly & ATR Sizing | Phase 4: VWAP Execution.
                 </p>
             </div>
             <div>
-                <span style="background: #9333EA; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700;">STATUS: READY FOR 15:30 EXECUTION</span>
+                <span style="background: #9333EA; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700;">STATUS: READY FOR EXECUTION</span>
             </div>
         </div>
     </div>
@@ -1387,21 +1444,33 @@ with tab5:
         run_rebalance_btn = st.button("🚀 JALANKAN PERFECT AUTO-REBALANCER SEKARANG", type="primary", use_container_width=True)
         if run_rebalance_btn:
             st.session_state['is_scanning'] = True
-            with st.spinner("🤖 Mengesksekusi 4-Phase Auto-Rebalancer (HMM -> XGBoost -> Half-Kelly -> VWAP Execution)..."):
-                rebalancer = PerfectAutoRebalancer(df_open_raw, total_equity_input, macro_info, hmm_label)
-                max_saham_pct = rebalancer.phase_1_macro_allocation()
-                top_saham_list = rebalancer.phase_2_stock_selection(all_ihsg_universe)
-                rebalancer.phase_3_risk_sizing(top_saham_list, total_equity_input * max_saham_pct)
-                df_journal = rebalancer.phase_4_vwap_execution(df_journal)
-                save_journal(df_journal)
-                st.session_state['rebalance_logs'] = rebalancer.execution_logs
+            
+            loader_r = st.empty()
+            loader_r.markdown("""
+            <div class="custom-loader-card">
+                <div class="cyan-pulse-loader"></div>
+                <div style="font-weight: 700; color: #38BDF8; font-size: 1.1rem; margin-top: 12px;">
+                    MENGESKSEKUSI AUTO-REBALANCER 4-FASE MATEMATIS...
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            rebalancer = PerfectAutoRebalancer(df_open_raw, total_equity_input, macro_info, hmm_label)
+            max_saham_pct = rebalancer.phase_1_macro_allocation()
+            top_saham_list = rebalancer.phase_2_stock_selection(all_ihsg_universe)
+            rebalancer.phase_3_risk_sizing(top_saham_list, total_equity_input * max_saham_pct)
+            df_journal = rebalancer.phase_4_vwap_execution(df_journal)
+            save_journal(df_journal)
+            st.session_state['rebalance_logs'] = rebalancer.execution_logs
+            
+            loader_r.empty()
             st.session_state['is_scanning'] = False
             st.success("✅ Auto-Rebalancing Selesai! Portofolio Telah Dioptimalkan Secara Matematis.")
             st.rerun()
             
     with col_reb2:
         if st.session_state['rebalance_logs']:
-            st.markdown("**📜 Log Eksekusi Real-Time Auto-Rebalancer:**")
+            st.markdown("**Log Eksekusi Real-Time Auto-Rebalancer:**")
             st.code("\n".join(st.session_state['rebalance_logs']), language="bash")
 
     st.markdown("---")
@@ -1428,10 +1497,10 @@ with tab5:
         
     st.markdown("---")
     
-    # RENDER EXECUTIVE INSTITUTIONAL EVALUATION CARD (SUPER CLEAN & VISUALLY STUNNING)
+    # RENDER EXECUTIVE INSTITUTIONAL EVALUATION CARD (SUPER CLEAN & NO SYMBOLS)
     render_institutional_evaluation_card(df_open_agg, macro_info, hmm_label)
     
-    col_sn1, col_sn2 = st.columns([1, 4])
+    col_sn1, col_sn2 = st.columns([1.5, 3])
     with col_sn1:
         if st.button("📸 Ambil Snapshot 16:30 Manual Now", use_container_width=True):
             now = datetime.now()
@@ -1454,6 +1523,11 @@ with tab5:
             save_daily_snapshot(df_snapshots)
             st.success("✅ Snapshot Penutupan Harian Berhasil Disimpan!")
             st.rerun()
+    with col_sn2:
+        if st.button("🧹 RESET JURNAL & WIN RATE HISTORIS", use_container_width=True):
+            reset_closed_trades_journal()
+            st.success("✅ Jurnal Transaksi Tertutup & Win Rate Historis Berhasil Di-reset Bersih (0%).")
+            st.rerun()
             
     # Display Daily Snapshots Log Table
     if not df_snapshots.empty:
@@ -1470,7 +1544,7 @@ with tab5:
         win_rate = (len(df_closed[df_closed['PnL (Rp)'] > 0]) / len(df_closed) * 100) if len(df_closed) > 0 else 0.0
         m2.metric("WIN RATE HISTORIS", f"{win_rate:.0f}%")
     else:
-        st.info("Jurnal transaksi tertutup bersih.")
+        st.info("Jurnal transaksi tertutup bersih. Win Rate Historis: 0%")
 
 st.markdown("---")
-st.caption("⚡ **PRO QUANT TERMINAL v20.0 — PERFECT AUTO-REBALANCER INTEGRATED ENGINE BY XPINONTOAN QUANT DESK.**")
+st.caption("⚡ **PRO QUANT TERMINAL v21.0 — CLEAN NARRATIVE & ENGAGING LOADER DESK BY XPINONTOAN QUANT DESK.**")
