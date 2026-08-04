@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # ==========================================
 # 1. DESIGN SYSTEM: MINIMALIST + WATERMARK XPINONTOAN + ZERO FLICKER
 # ==========================================
-st.set_page_config(page_title="Pro Quant Terminal — 15s Live", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Pro Quant Terminal — Portfolio Analytics", layout="wide", page_icon="⚡")
 
 st.markdown("""
 <style>
@@ -63,7 +63,7 @@ st.markdown("""
         background: #1E293B;
         border: 1px solid #334155;
         border-radius: 8px;
-        padding: 12px 16px;
+        padding: 14px 18px;
         margin-bottom: 12px;
     }
 
@@ -185,7 +185,7 @@ if 'ml_leaderboard' not in st.session_state:
 
 # AUTO-REFRESH EXACTLY EVERY 15 SECONDS (PAUSED DURING ACTIVE SCREENER SCAN)
 if not st.session_state['is_scanning']:
-    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v142")
+    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v150")
 else:
     refresh_count = 0
 
@@ -757,7 +757,7 @@ st.markdown("---")
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🏆 FITUR UTAMA: Screener Adaptif & ML Intel", 
     "📊 Pemeringkatan ML Universe (941 Saham)", 
-    "⏱️ Intraday VWAP (1-Menit Real-Time)", 
+    "📈 Chart Analitikal Portofolio (Real-Time)", 
     "🏦 Desk Makro-Mikro & Risk-On/Off",
     "📂 Portofolio & High-Frequency Live Guard"
 ])
@@ -849,7 +849,7 @@ with tab2:
     col_l1, col_l2 = st.columns([1, 3])
     with col_l1:
         top_limit_scan = st.slider("Jumlah Saham Dipindai:", min_value=20, max_value=200, value=50, step=10)
-        if st.button("🚀 Jalankan Pemeringkatan ML Universe"):
+        if st.button("🚀 Jalankan PemeringKATAN ML Universe"):
             with st.spinner(f"Melatih XGBoost ML pada {top_limit_scan} saham..."):
                 st.session_state['ml_leaderboard'] = massive_ml_ranking(all_ihsg_universe, top_limit=top_limit_scan)
     with col_l2:
@@ -857,27 +857,80 @@ with tab2:
             st.dataframe(st.session_state['ml_leaderboard'], use_container_width=True)
 
 # ==========================================
-# TAB 3: INTRADAY VWAP (1-MENIT REAL-TIME)
+# TAB 3: CHART ANALITIKAL PORTOFOLIO (REAL-TIME)
 # ==========================================
 with tab3:
-    live_market_data = pull_live_data(WATCHLIST_1M)
-    if live_market_data:
-        df_display = pd.DataFrame(live_market_data)
-        df_table = df_display.drop(columns=['_raw_df'])
-        col1, col2 = st.columns([1.2, 1.8])
-        with col1:
-            st.subheader("📊 Radar Order Flow Intraday (High-Frequency Stream 15s)")
+    st.subheader("📈 Chart Analitikal & Monitor Posisi Portofolio (Real-Time)")
+    df_open_chart = df_journal[df_journal['Status'] == 'OPEN'].copy() if not df_journal.empty else pd.DataFrame()
+    
+    if not df_open_chart.empty:
+        available_tickers = df_open_chart['Ticker'].unique().tolist()
+        col_c1, col_c2 = st.columns([1, 3])
+        with col_c1:
+            selected_chart_ticker = st.selectbox("🎯 Pilih Ticker Portofolio:", available_tickers)
+            pos_row = df_open_chart[df_open_chart['Ticker'] == selected_chart_ticker].iloc[-1]
+            
+            entry_p = float(pos_row['Harga Entry'])
+            tp_p = float(pos_row['Target TP'])
+            sl_p = float(pos_row['Stop Loss'])
+            curr_p = float(pos_row['Harga Closing/Exit'])
+            vol_l = float(pos_row['Volume'])
+            pnl_rp = float(pos_row['PnL (Rp)'])
+            cost_total = entry_p * vol_l
+            pnl_pct = (pnl_rp / cost_total * 100) if cost_total > 0 else 0.0
+            
+            st.markdown('<div class="mini-card">', unsafe_allow_html=True)
+            st.metric("HARGA ENTRY", f"Rp {entry_p:,.0f}")
+            st.metric("HARGA TERKINI", f"Rp {curr_p:,.0f}", delta=f"{((curr_p - entry_p)/entry_p*100):+.2f}%")
+            st.metric("TARGET TP (2x RISK)", f"Rp {tp_p:,.0f}", delta=f"{((tp_p - curr_p)/curr_p*100):+.2f}% Ke TP")
+            st.metric("STOP LOSS (2x ATR)", f"Rp {sl_p:,.0f}", delta=f"{((sl_p - curr_p)/curr_p*100):+.2f}% Ke SL", delta_color="inverse")
+            st.metric("FLOATING PnL POSISI", f"Rp {pnl_rp:,.0f}", delta=f"{pnl_pct:+.2f}%")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+        with col_c2:
+            try:
+                raw_df_c = yf.download(selected_chart_ticker, period="1d", interval="1m", progress=False)
+                if isinstance(raw_df_c.columns, pd.MultiIndex): raw_df_c.columns = raw_df_c.columns.get_level_values(0)
+                
+                if not raw_df_c.empty:
+                    close_s = raw_df_c['Close'].squeeze()
+                    open_s = raw_df_c['Open'].squeeze()
+                    high_s = raw_df_c['High'].squeeze()
+                    low_s = raw_df_c['Low'].squeeze()
+                    vol_s = raw_df_c['Volume'].squeeze()
+                    
+                    tp = (high_s + low_s + close_s) / 3
+                    cum_v = vol_s.cumsum()
+                    raw_df_c['VWAP'] = (vol_s * tp).cumsum() / cum_v.replace(0, np.nan)
+                    
+                    fig = go.Figure()
+                    fig.add_trace(go.Candlestick(x=raw_df_c.index, open=open_s, high=high_s, low=low_s, close=close_s, name='Harga Live'))
+                    if 'VWAP' in raw_df_c.columns:
+                        fig.add_trace(go.Scatter(x=raw_df_c.index, y=raw_df_c['VWAP'], line=dict(color='#38BDF8', width=2), name='Garis VWAP'))
+                        
+                    # Garis Acuan Entry, TP, & SL
+                    fig.add_hline(y=entry_p, line_dash="dash", line_color="#00E676", annotation_text=f"Entry: Rp {entry_p:,.0f}", annotation_position="top left")
+                    fig.add_hline(y=tp_p, line_dash="dash", line_color="#00B0FF", annotation_text=f"Target TP: Rp {tp_p:,.0f}", annotation_position="top left")
+                    fig.add_hline(y=sl_p, line_dash="dash", line_color="#FF1744", annotation_text=f"Stop Loss: Rp {sl_p:,.0f}", annotation_position="bottom left")
+                    
+                    fig.update_layout(title=f"Chart Live 1-Menit: {selected_chart_ticker}", yaxis_title="Harga (IDR)", xaxis_rangeslider_visible=False, height=500, template="plotly_dark", margin=dict(l=10, r=10, t=40, b=10))
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning(f"Data intraday 1-menit untuk {selected_chart_ticker} sedang tidak tersedia di bursa.")
+            except Exception as e:
+                logging.exception("Error rendering chart for %s: %s", selected_chart_ticker, e)
+                st.error(f"Gagal memuat chart analitikal: {e}")
+    else:
+        st.info("💡 Belum ada posisi OPEN di Portofolio. Silakan lakukan pemindaian di **Tab 1 (Screener)** lalu klik **`⚡ AUTO-DEPLOY`** untuk mengaktifkan chart analitikal portofolio real-time.")
+        
+        # Display fallback radar from default watchlist
+        st.markdown("---")
+        st.subheader("📊 Radar Intraday Pantauan Default (Watchlist)")
+        live_market_data = pull_live_data(WATCHLIST_1M)
+        if live_market_data:
+            df_display = pd.DataFrame(live_market_data)
+            df_table = df_display.drop(columns=['_raw_df'])
             st.dataframe(df_table, use_container_width=True, hide_index=True)
-        with col2:
-            st.subheader("📈 Grafik Intraday 1-Menit Live Stream")
-            selected_ticker = st.selectbox("Ticker:", df_table['Ticker'].tolist())
-            raw_df = [item['_raw_df'] for item in live_market_data if item['Ticker'] == selected_ticker][0]
-            fig = go.Figure()
-            fig.add_trace(go.Candlestick(x=raw_df.index, open=raw_df['Open'], high=raw_df['High'], low=raw_df['Low'], close=raw_df['Close'], name='Harga Live'))
-            if 'VWAP' in raw_df.columns:
-                fig.add_trace(go.Scatter(x=raw_df.index, y=raw_df['VWAP'], line=dict(color='#38BDF8', width=2), name='VWAP'))
-            fig.update_layout(yaxis_title="Harga (IDR)", xaxis_rangeslider_visible=False, height=450, template="plotly_dark", margin=dict(l=10, r=10, t=30, b=10))
-            st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
 # TAB 4: DESK MAKRO-MIKRO & RISK-ON / RISK-OFF RANKING
@@ -937,8 +990,12 @@ with tab5:
             st.dataframe(df_open[['ID', 'Tanggal Entry', 'Ticker', 'Harga Entry', 'Harga Closing/Exit', 'Target TP', 'Stop Loss', 'Volume', 'PnL (Rp)']], use_container_width=True, hide_index=True)
         with col_p2:
             st.markdown('<div class="mini-card">', unsafe_allow_html=True)
+            tot_capital_deployed = float((df_open['Harga Entry'] * df_open['Volume']).sum())
             tot_floating_pnl = float(df_open['PnL (Rp)'].sum())
-            st.metric("TOTAL FLOATING PnL", f"Rp {tot_floating_pnl:,.0f}", delta=f"{'POSITIF' if tot_floating_pnl >= 0 else 'NEGATIF'}")
+            tot_pnl_pct = (tot_floating_pnl / tot_capital_deployed * 100) if tot_capital_deployed > 0 else 0.0
+            
+            st.metric("TOTAL MODAL TERPAKAI", f"Rp {tot_capital_deployed:,.0f}")
+            st.metric("TOTAL FLOATING PnL", f"Rp {tot_floating_pnl:,.0f}", delta=f"{tot_pnl_pct:+.2f}% DARI MODAL")
             st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("Tidak ada posisi OPEN. Modal 100% Cash.")
@@ -956,4 +1013,4 @@ with tab5:
         st.info("Jurnal transaksi tertutup bersih.")
 
 st.markdown("---")
-st.caption("⚡ **PRO QUANT TERMINAL v14.2 — 15S LIVE STREAMING & UNIVERSAL FEATURE ENGINE BY XPINONTOAN QUANT DESK.**")
+st.caption("⚡ **PRO QUANT TERMINAL v15.0 — PORTFOLIO ANALYTICAL CHARTS & ENHANCED METRICS BY XPINONTOAN QUANT DESK.**")
