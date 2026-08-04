@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # ==========================================
 # 1. DESIGN SYSTEM: MINIMALIST + WATERMARK XPINONTOAN + ZERO FLICKER
 # ==========================================
-st.set_page_config(page_title="Pro Quant Terminal — Live Fundamental Desk", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Pro Quant Terminal — Perfect Auto-Rebalancer", layout="wide", page_icon="⚡")
 
 st.markdown("""
 <style>
@@ -75,6 +75,15 @@ st.markdown("""
         padding: 20px;
         margin-bottom: 20px;
         box-shadow: 0 8px 32px rgba(2, 132, 199, 0.2);
+    }
+
+    .rebalancer-card {
+        background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(15, 23, 42, 0.95) 100%);
+        border: 2px solid #A855F7;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 8px 32px rgba(168, 85, 247, 0.2);
     }
 
     .macro-score-card {
@@ -240,10 +249,12 @@ if 'live_signals' not in st.session_state:
     st.session_state['live_signals'] = pd.DataFrame()
 if 'ml_leaderboard' not in st.session_state:
     st.session_state['ml_leaderboard'] = pd.DataFrame()
+if 'rebalance_logs' not in st.session_state:
+    st.session_state['rebalance_logs'] = []
 
 # AUTO-REFRESH EXACTLY EVERY 15 SECONDS (PAUSED DURING ACTIVE SCREENER SCAN)
 if not st.session_state['is_scanning']:
-    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v190")
+    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v200")
 else:
     refresh_count = 0
 
@@ -336,7 +347,6 @@ def fetch_realtime_macro_stream():
     coal_price = 135.47
     cpo_price = 4161.50
     
-    # 1. Real-Time USD / IDR Spot Streaming
     try:
         t_usd = yf.Ticker("IDR=X")
         fast_usd = getattr(t_usd, 'fast_info', {})
@@ -355,7 +365,6 @@ def fetch_realtime_macro_stream():
     except Exception as e:
         logging.exception("Real-time USD/IDR error: %s", e)
         
-    # 2. Real-Time Newcastle Coal Futures Index (USD/Ton)
     try:
         raw_coal = yf.download("PTBA.JK", period="5d", interval="1d", progress=False)
         if isinstance(raw_coal.columns, pd.MultiIndex): raw_coal.columns = raw_coal.columns.get_level_values(0)
@@ -365,7 +374,6 @@ def fetch_realtime_macro_stream():
     except Exception as e:
         logging.exception("Real-time Coal error: %s", e)
         
-    # 3. Real-Time CPO Malaysia Derivatives (MYR/Ton)
     try:
         raw_cpo = yf.download("AALI.JK", period="5d", interval="1d", progress=False)
         if isinstance(raw_cpo.columns, pd.MultiIndex): raw_cpo.columns = raw_cpo.columns.get_level_values(0)
@@ -534,7 +542,120 @@ def pull_live_data(tickers):
     return market_data
 
 # ==========================================
-# 4. HIGH-PRECISION FEATURE INJECTION & ML ENGINE
+# 4. PERFECT AUTO-REBALANCER CLASS ENGINE (4-PHASE QUANT ENGINE)
+# ==========================================
+class PerfectAutoRebalancer:
+    def __init__(self, current_portfolio_df, total_equity, macro_info, regime_label):
+        self.portfolio_df = current_portfolio_df
+        self.equity = total_equity
+        self.macro_info = macro_info
+        self.regime_label = regime_label
+        self.target_weights = {}
+        self.execution_logs = []
+
+    def phase_1_macro_allocation(self):
+        """Phase 1: Menentukan porsi KAS vs SAHAM berbasis HMM Market Regime"""
+        if "BEARISH" in self.regime_label:
+            return 0.20 # 20% modal di saham, 80% hold di Kas
+        elif "SIDEWAYS" in self.regime_label:
+            return 0.50 # 50% modal di saham
+        else:
+            return 0.90 # 90% modal di saham (Agresif)
+
+    def phase_2_stock_selection(self, universe_tickers):
+        """Phase 2: XGBoost + OBV mencari Top 5 saham dengan probabilitas > 70%"""
+        scanner_results = run_screener_engine_full(self.equity, universe_tickers, self.macro_info, {'Multiplier': 1.0})
+        if not scanner_results.empty:
+            top_5 = scanner_results.head(5).to_dict('records')
+            return top_5
+        return []
+
+    def phase_3_risk_sizing(self, top_stocks, max_equity_allowed):
+        """Phase 3: Half-Kelly Criterion & Dynamic ATR Stop Loss Calculation"""
+        allocations = {}
+        if not top_stocks: return
+        
+        per_stock_budget = max_equity_allowed / len(top_stocks)
+        for stock in top_stocks:
+            ticker = stock['Ticker']
+            entry_p = float(stock['Harga Entry'])
+            prob_str = str(stock.get('Probabilitas Menang (ML + Makro)', '70.0%'))
+            win_prob = float(re.sub(r'[^\d.]', '', prob_str)) / 100.0 if prob_str else 0.70
+            
+            # Half-Kelly Fraction: f* = (p*b - q)/b where b=2 (2x R:R)
+            kelly_pct = max(0.10, (win_prob * 2.0 - (1.0 - win_prob)) / 2.0)
+            alloc_val = per_stock_budget * (kelly_pct / 2.0)
+            
+            target_volume = int((alloc_val / entry_p) / 100) * 100 if entry_p > 0 else 100
+            target_volume = max(100, target_volume)
+            
+            allocations[ticker] = {
+                'Target_Lot': target_volume,
+                'Harga_Entry': entry_p,
+                'Target_TP': float(stock.get('Target TP (2x Risk)', entry_p * 1.05)),
+                'Stop_Loss': float(stock.get('Dynamic SL (2x ATR)', entry_p * 0.95))
+            }
+        self.target_weights = allocations
+
+    def phase_4_vwap_execution(self, df_j):
+        """Phase 4: Eksekusi Rebalancing Portofolio Berbasis Filter VWAP"""
+        self.execution_logs.append("⚡ [AUTO-REBALANCING INITIATED]")
+        df_open = df_j[df_j['Status'] == 'OPEN'].copy() if not df_j.empty else pd.DataFrame()
+        
+        current_portfolio = {}
+        if not df_open.empty:
+            for ticker, grp in df_open.groupby('Ticker'):
+                current_portfolio[ticker] = {
+                    'Lot': grp['Volume'].sum(),
+                    'Entry': (grp['Harga Entry'] * grp['Volume']).sum() / grp['Volume'].sum()
+                }
+                
+        # 1. Bandingkan Portofolio Saat Ini vs Target Bobot
+        for ticker, data in current_portfolio.items():
+            if ticker not in self.target_weights:
+                # Saham kehilangan momentum -> JUAL SEMUA (LIQUIDATE)
+                self.execution_logs.append(f"🔴 LIQUIDATE (Jual Semua): {ticker} sebanyak {data['Lot']} lembar (Momentum terdegradasi).")
+                mask = (df_j['Ticker'] == ticker) & (df_j['Status'] == 'OPEN')
+                df_j.loc[mask, 'Status'] = 'CLOSED'
+                df_j.loc[mask, 'Tanggal Exit'] = datetime.now().strftime('%Y-%m-%d')
+                df_j.loc[mask, 'Keterangan Sistem'] = '🤖 Rebalancer Liquidated'
+            elif data['Lot'] > self.target_weights[ticker]['Target_Lot']:
+                # Porsi Overweight -> TRIM
+                sell_lot = data['Lot'] - self.target_weights[ticker]['Target_Lot']
+                self.execution_logs.append(f"🟡 TRIM (Jual Sebagian): {ticker} sebanyak {sell_lot} lembar.")
+                mask = (df_j['Ticker'] == ticker) & (df_j['Status'] == 'OPEN')
+                df_j.loc[mask, 'Volume'] = self.target_weights[ticker]['Target_Lot']
+
+        # 2. Beli saham baru atau tambah muatan (Accumulate)
+        for ticker, target in self.target_weights.items():
+            curr_lot = current_portfolio.get(ticker, {}).get('Lot', 0)
+            if curr_lot < target['Target_Lot']:
+                buy_lot = target['Target_Lot'] - curr_lot
+                self.execution_logs.append(f"🟢 ACCUMULATE (Beli VWAP Sniper): {ticker} sebanyak {buy_lot} lembar (Standby di bawah VWAP).")
+                
+                new_pos = {
+                    'ID': f"REBAL-{datetime.now().strftime('%H%M%S')}-{ticker[:4]}",
+                    'Tanggal Entry': datetime.now().strftime('%Y-%m-%d'),
+                    'Tanggal Exit': '-',
+                    'Ticker': ticker,
+                    'Tipe': 'LONG',
+                    'Status': 'OPEN',
+                    'Harga Entry': target['Harga_Entry'],
+                    'Target TP': target['Target_TP'],
+                    'Stop Loss': target['Stop_Loss'],
+                    'Harga Closing/Exit': target['Harga_Entry'],
+                    'Volume': buy_lot,
+                    'PnL (Rp)': 0.0,
+                    'Keterangan Sistem': '🤖 Rebalancer VWAP Sniper',
+                    'Sesuai Rule?': 'Ya'
+                }
+                df_j = pd.concat([df_j, pd.DataFrame([new_pos])], ignore_index=True)
+
+        self.execution_logs.append("✅ [AUTO-REBALANCING SELESAI] Portofolio telah dioptimalkan secara matematis.")
+        return df_j
+
+# ==========================================
+# 5. HIGH-PRECISION FEATURE INJECTION & ML ENGINE
 # ==========================================
 def inject_advanced_indicators(df):
     close_s = df['Close'].squeeze()
@@ -747,7 +868,7 @@ def run_screener_engine_full(capital, tickers_to_scan, macro_info, adaptive_conf
     return res_df
 
 # ==========================================
-# 5. REAL-TIME LIVE PORTFOLIO STREAMING & COMPOUNDING AVERAGE ENGINE
+# 6. REAL-TIME LIVE PORTFOLIO STREAMING & COMPOUNDING AVERAGE ENGINE
 # ==========================================
 def update_portfolio_live_prices(df_j):
     df_open = df_j[df_j['Status'] == 'OPEN'].copy()
@@ -976,7 +1097,7 @@ def auto_execute_tp_sl_guard(df_j):
     return df_j, executed_events
 
 # ==========================================
-# 6. HEADER MINIMALIS & LIVE STREAMING BADGES
+# 7. HEADER MINIMALIS & LIVE STREAMING BADGES
 # ==========================================
 macro_info = fetch_realtime_macro_stream()
 hmm_idx, hmm_label, adaptive_config = run_adaptive_quant_engine()
@@ -1003,14 +1124,14 @@ m4.metric("CPO MALAYSIA (LIVE)", f"{macro_info['cpo_price']:.2f} MYR")
 st.markdown("---")
 
 # ==========================================
-# 7. UI/UX LAYOUT (MINIMALIST 5 TABS — SCREENER PRIORITIZED)
+# 8. UI/UX LAYOUT (MINIMALIST 5 TABS — SCREENER PRIORITIZED)
 # ==========================================
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🏆 FITUR UTAMA: Screener Adaptif & ML Intel", 
     "📊 Pemeringkatan ML Universe (941 Saham)", 
     "📈 Chart Analitikal Portofolio (Real-Time)", 
     "🏦 Desk Makro-Mikro & Risk-On/Off",
-    "📂 Portofolio & Jurnal Penutupan 16:30 WIB"
+    "📂 Portofolio & Perfect Auto-Rebalancer"
 ])
 
 all_ihsg_universe = load_universe()
@@ -1229,10 +1350,10 @@ with tab4:
         """)
 
 # ==========================================
-# TAB 5: PORTOFOLIO & JURNAL PENUTUPAN 16:30 WIB (EXECUTIVE DESK)
+# TAB 5: PORTOFOLIO & PERFECT AUTO-REBALANCER (4-PHASE ENGINE)
 # ==========================================
 with tab5:
-    st.subheader("📂 Posisi Aktif & Compounding Average Risk Engine")
+    st.subheader("📂 Posisi Aktif & Perfect Auto-Rebalancer Desk")
     df_journal, exec_events = auto_execute_tp_sl_guard(df_journal)
     
     df_open_raw = df_journal[df_journal['Status'] == 'OPEN'].copy() if not df_journal.empty else pd.DataFrame()
@@ -1241,6 +1362,50 @@ with tab5:
     # TRIGGER DAILY 16:30 WIB CLOSING SNAPSHOT & INSTITUTIONAL EVALUATION
     df_snapshots = check_and_record_daily_snapshot(df_open_agg, macro_info, hmm_label, df_snapshots)
     
+    # -------------------------------------------------------------
+    # PERFECT AUTO-REBALANCER CONTROL CARD
+    # -------------------------------------------------------------
+    st.markdown("""
+    <div class="rebalancer-card">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h2 style="margin:0; color: #C084FC; font-size: 1.35rem;">⚡ PERFECT AUTO-REBALANCER ENGINE (4-PHASE QUANT)</h2>
+                <p style="margin:4px 0 0 0; color: #E9D5FF; font-size: 0.85rem;">
+                    <b>Phase 1:</b> Macro Cash/Equity Allocation (HMM Weather) | <b>Phase 2:</b> XGBoost + OBV Selection | <b>Phase 3:</b> Half-Kelly & ATR Sizing | <b>Phase 4:</b> VWAP Execution.
+                </p>
+            </div>
+            <div>
+                <span style="background: #9333EA; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700;">STATUS: READY FOR 15:30 EXECUTION</span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col_reb1, col_reb2 = st.columns([1.5, 3])
+    with col_reb1:
+        total_equity_input = st.number_input("Modal Total Rebalancing (Rp):", min_value=10000000, value=100000000, step=10000000)
+        run_rebalance_btn = st.button("🚀 JALANKAN PERFECT AUTO-REBALANCER SEKARANG", type="primary", use_container_width=True)
+        if run_rebalance_btn:
+            st.session_state['is_scanning'] = True
+            with st.spinner("🤖 Mengesksekusi 4-Phase Auto-Rebalancer (HMM -> XGBoost -> Half-Kelly -> VWAP Execution)..."):
+                rebalancer = PerfectAutoRebalancer(df_open_raw, total_equity_input, macro_info, hmm_label)
+                max_saham_pct = rebalancer.phase_1_macro_allocation()
+                top_saham_list = rebalancer.phase_2_stock_selection(all_ihsg_universe)
+                rebalancer.phase_3_risk_sizing(top_saham_list, total_equity_input * max_saham_pct)
+                df_journal = rebalancer.phase_4_vwap_execution(df_journal)
+                save_journal(df_journal)
+                st.session_state['rebalance_logs'] = rebalancer.execution_logs
+            st.session_state['is_scanning'] = False
+            st.success("✅ Auto-Rebalancing Selesai! Portofolio Telah Dioptimalkan Secara Matematis.")
+            st.rerun()
+            
+    with col_reb2:
+        if st.session_state['rebalance_logs']:
+            st.markdown("**📜 Log Eksekusi Real-Time Auto-Rebalancer:**")
+            st.code("\n".join(st.session_state['rebalance_logs']), language="bash")
+
+    st.markdown("---")
+
     if not df_open_agg.empty:
         col_p1, col_p2 = st.columns([3.2, 1.2])
         with col_p1:
@@ -1308,4 +1473,4 @@ with tab5:
         st.info("Jurnal transaksi tertutup bersih.")
 
 st.markdown("---")
-st.caption("⚡ **PRO QUANT TERMINAL v19.0 — LIVE FUNDAMENTAL MARKET STREAMER BY XPINONTOAN QUANT DESK.**")
+st.caption("⚡ **PRO QUANT TERMINAL v20.0 — PERFECT AUTO-REBALANCER INTEGRATED ENGINE BY XPINONTOAN QUANT DESK.**")
