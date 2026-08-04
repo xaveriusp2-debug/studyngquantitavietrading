@@ -375,6 +375,8 @@ def run_adaptive_quant_engine():
     config = engine.auto_adjust_strategy(regime_idx, regime_label)
     return regime_idx, regime_label, config
 
+WATCHLIST_1M = ['BBCA.JK', 'BMRI.JK', 'BBRI.JK', 'TLKM.JK', 'ASII.JK', 'GOTO.JK', 'AMMN.JK', 'BREN.JK', 'BRPT.JK']
+
 @st.cache_data(ttl=60, show_spinner=False) 
 def pull_live_data(tickers):
     """Fungsi Penarik Data Real-Time Asinkron untuk Dasbor Utama"""
