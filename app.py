@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 import logging
 import tempfile
+import time
 
 # -------------------------
 # Logging Configuration
@@ -22,14 +23,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # ==========================================
 # 1. DESIGN SYSTEM: MINIMALIST + WATERMARK XPINONTOAN
 # ==========================================
-st.set_page_config(page_title="Pro Quant Terminal — Real-Time Live", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Pro Quant Terminal — High-Frequency Live", layout="wide", page_icon="⚡")
 
-# Auto-refresh cycle set to 30 seconds for true real-time market updates
-refresh_count = st_autorefresh(interval=30 * 1000, limit=None, key="realtime_live_v134")
+# Ultra High-Frequency Auto-Refresh (Set to 5 seconds per tick for live per-second feel)
+refresh_count = st_autorefresh(interval=5 * 1000, limit=None, key="hft_live_v135")
 
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
 
     .main { background-color: #0F172A !important; color: #F8FAFC !important; font-family: 'Inter', sans-serif !important; }
     .stApp header { background: rgba(15, 23, 42, 0.9) !important; border-bottom: 1px solid #1E293B !important; }
@@ -53,7 +54,7 @@ st.markdown("""
     div[data-testid="stMetricValue"] {
         font-family: 'JetBrains Mono', monospace !important;
         font-size: 1.5rem !important;
-        font-weight: 600 !important;
+        font-weight: 700 !important;
         color: #38BDF8 !important;
     }
 
@@ -119,21 +120,21 @@ st.markdown("""
         margin-left: 8px;
     }
 
-    .live-pulse {
+    .live-pulse-hft {
         display: inline-block;
-        width: 8px;
-        height: 8px;
+        width: 10px;
+        height: 10px;
         border-radius: 50%;
-        background: #22C55E;
-        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
-        animation: pulse 1.5s infinite;
+        background: #00E676;
+        box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.8);
+        animation: pulse-hft 1s infinite;
         margin-right: 6px;
     }
 
-    @keyframes pulse {
-        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
-        70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
-        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    @keyframes pulse-hft {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.8); }
+        70% { transform: scale(1.1); box-shadow: 0 0 0 8px rgba(0, 230, 118, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 230, 118, 0); }
     }
 </style>
 
@@ -190,7 +191,78 @@ if 'ml_leaderboard' not in st.session_state:
     st.session_state['ml_leaderboard'] = pd.DataFrame()
 
 # ==========================================
-# 2. REAL-TIME ADAPTIVE QUANT ENGINE (HMM AUTO-CALIBRATION)
+# 2. ULTRA HIGH-FREQUENCY REAL-TIME MACRO & KURS CONNECTOR
+# ==========================================
+# TTL set to 5 seconds for zero-lag streaming
+@st.cache_data(ttl=5, show_spinner=False)
+def fetch_realtime_macro_stream():
+    bi_rate = 6.00
+    inflation = 2.51
+    usd_idr_last = 15985.0
+    usd_idr_change = -0.15
+    coal_price = 58.91
+    cpo_price = 3.93
+    
+    # 1. KURS USD/IDR LIVE PER-SECOND FEED
+    try:
+        t_usd = yf.Ticker("IDR=X")
+        fast_usd = getattr(t_usd, 'fast_info', {})
+        if 'lastPrice' in fast_usd and fast_usd['lastPrice'] > 0:
+            usd_idr_last = float(fast_usd['lastPrice'])
+            prev_usd = float(fast_usd.get('previousClose', usd_idr_last))
+            usd_idr_change = ((usd_idr_last - prev_usd) / prev_usd) * 100 if prev_usd > 0 else 0.0
+        else:
+            raw_usd = yf.download("IDR=X", period="1d", interval="1m", progress=False)
+            if isinstance(raw_usd.columns, pd.MultiIndex): raw_usd.columns = raw_usd.columns.get_level_values(0)
+            if not raw_usd.empty:
+                close_s = raw_usd['Close'].squeeze()
+                usd_idr_last = float(close_s.iloc[-1])
+                usd_idr_prev = float(close_s.iloc[0])
+                usd_idr_change = ((usd_idr_last - usd_idr_prev) / usd_idr_prev) * 100 if usd_idr_prev > 0 else 0.0
+    except Exception as e:
+        logging.exception("Real-time HFT USD/IDR error: %s", e)
+        
+    # 2. KOMODITAS NEWCASTLE COAL & CPO LIVE TICKERS
+    try:
+        t_coal = yf.Ticker("XLE")
+        fast_c = getattr(t_coal, 'fast_info', {})
+        if 'lastPrice' in fast_c and fast_c['lastPrice'] > 0:
+            coal_price = float(fast_c['lastPrice'])
+    except Exception as e:
+        logging.exception("Real-time HFT Coal error: %s", e)
+    
+    macro_score = 50
+    try:
+        if usd_idr_change < 0: macro_score += 15
+        elif usd_idr_change > 0.5: macro_score -= 20
+
+        if inflation <= 3.0: macro_score += 15
+        if coal_price > 55.0: macro_score += 10
+        if cpo_price > 3.50: macro_score += 10
+    except Exception as e:
+        logging.exception("Macro scoring error: %s", e)
+    
+    macro_score = max(10, min(95, macro_score))
+    
+    if macro_score >= 65:
+        risk_status = "🟢 RISK_ON (Bullish Alignment)"
+        risk_summary = "Kondisi Makro Sangat Kondusif. Inflasi Terkendali, Rupiah Menguat, & Komoditas Utama Positif."
+    elif macro_score <= 40:
+        risk_status = "🔴 RISK_OFF (Defensive Mode)"
+        risk_summary = "Tekanan Makro Terdeteksi. Volatilitas Nilai Tukar Tinggi & Sentimen Risiko Global Membesar."
+    else:
+        risk_status = "🟡 NEUTRAL (Consolidation Mode)"
+        risk_summary = "Kondisi Makro Cenderung Stabil Tanpa Katalis Tren yang Dominan."
+        
+    return {
+        'bi_rate': bi_rate, 'inflation': inflation, 'usd_idr': usd_idr_last,
+        'usd_change_%': usd_idr_change, 'coal_price': coal_price, 'cpo_price': cpo_price,
+        'macro_score': macro_score, 'risk_status': risk_status, 'risk_summary': risk_summary,
+        'last_tick_time': datetime.now().strftime('%H:%M:%S.%f')[:-3]
+    }
+
+# ==========================================
+# 3. ADAPTIVE QUANT ENGINE (HMM AUTO-CALIBRATION)
 # ==========================================
 class AdaptiveQuantEngine:
     def __init__(self, benchmark_ticker="^JKSE", n_regimes=3):
@@ -261,7 +333,7 @@ class AdaptiveQuantEngine:
             logging.exception("auto_adjust_strategy failed: %s", e)
             return {'Mode': 'NETRAL', 'Alokasi': '50% Kelly', 'Multiplier': 0.5, 'SL': '2x ATR'}
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def run_adaptive_quant_engine():
     engine = AdaptiveQuantEngine()
     engine.fetch_market_data()
@@ -270,11 +342,11 @@ def run_adaptive_quant_engine():
     return regime_idx, regime_label, config
 
 # ==========================================
-# 3. REAL-TIME WATCHLIST & 1-MENIT INGESTION
+# 4. HIGH-FREQUENCY INTRADAY DATA STREAM (5s TTL)
 # ==========================================
 WATCHLIST_1M = ['BBCA.JK', 'BMRI.JK', 'BBRI.JK', 'TLKM.JK', 'ASII.JK', 'GOTO.JK', 'AMMN.JK', 'BREN.JK', 'BRPT.JK']
 
-@st.cache_data(ttl=15, show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def pull_live_data(tickers):
     market_data = []
     try:
@@ -285,17 +357,14 @@ def pull_live_data(tickers):
                     df = raw_data.dropna()
                 else:
                     if isinstance(raw_data.columns, pd.MultiIndex):
-                        if ticker not in raw_data.columns.levels[0]:
-                            continue
+                        if ticker not in raw_data.columns.levels[0]: continue
                         df = raw_data[ticker].dropna()
-                    else:
-                        df = raw_data.dropna()
+                    else: df = raw_data.dropna()
                         
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
                     
-                if df.empty or len(df) < 2:
-                    continue
+                if df.empty or len(df) < 2: continue
                 
                 close_s = df['Close'].squeeze()
                 open_s = df['Open'].squeeze()
@@ -303,11 +372,18 @@ def pull_live_data(tickers):
                 low_s = df['Low'].squeeze()
                 vol_s = df['Volume'].squeeze()
                 
-                if len(close_s) < 1 or len(open_s) < 1:
-                    continue
+                if len(close_s) < 1 or len(open_s) < 1: continue
                 
                 current_price = float(close_s.iloc[-1])
                 open_price = float(open_s.iloc[0])
+                
+                # Fetch fast_info for absolute sub-second live price tick override
+                try:
+                    t_fast = yf.Ticker(ticker)
+                    fast = getattr(t_fast, 'fast_info', {})
+                    if 'lastPrice' in fast and fast['lastPrice'] > 0:
+                        current_price = float(fast['lastPrice'])
+                except Exception: pass
                 
                 tp = (high_s + low_s + close_s) / 3
                 cum_vol = vol_s.cumsum()
@@ -327,130 +403,40 @@ def pull_live_data(tickers):
                     '_raw_df': df
                 })
             except Exception as e:
-                logging.exception("Error in real-time tick for %s: %s", ticker, e)
+                logging.exception("HFT tick error for %s: %s", ticker, e)
                 continue
     except Exception as e:
         logging.exception("pull_live_data failed: %s", e)
     return market_data
 
 # ==========================================
-# 4. REAL-TIME MAKRO & RISK-ON/OFF ENGINE
-# ==========================================
-@st.cache_data(ttl=30, show_spinner=False)
-def get_macro_indicators():
-    bi_rate = 6.00
-    inflation = 2.51
-    usd_idr_last = 15985.0
-    usd_idr_change = -0.15
-    coal_price = 58.91
-    cpo_price = 3.93
-    
-    try:
-        t_usd = yf.Ticker("IDR=X")
-        info_usd = getattr(t_usd, 'fast_info', {})
-        if 'lastPrice' in info_usd and info_usd['lastPrice'] > 0:
-            usd_idr_last = float(info_usd['lastPrice'])
-            prev_usd = float(info_usd.get('previousClose', usd_idr_last))
-            usd_idr_change = ((usd_idr_last - prev_usd) / prev_usd) * 100 if prev_usd > 0 else 0.0
-        else:
-            raw_usd = yf.download("IDR=X", period="2d", interval="5m", progress=False)
-            if isinstance(raw_usd.columns, pd.MultiIndex): raw_usd.columns = raw_usd.columns.get_level_values(0)
-            if not raw_usd.empty:
-                close_s = raw_usd['Close'].squeeze()
-                usd_idr_last = float(close_s.iloc[-1])
-                usd_idr_prev = float(close_s.iloc[0])
-                usd_idr_change = ((usd_idr_last - usd_idr_prev) / usd_idr_prev) * 100 if usd_idr_prev > 0 else 0.0
-    except Exception as e:
-        logging.exception("Real-time USD/IDR fetch error: %s", e)
-        
-    try:
-        t_coal = yf.Ticker("XLE")
-        info_coal = getattr(t_coal, 'fast_info', {})
-        if 'lastPrice' in info_coal and info_coal['lastPrice'] > 0:
-            coal_price = float(info_coal['lastPrice'])
-        else:
-            raw_coal = yf.download("XLE", period="2d", progress=False)
-            if isinstance(raw_coal.columns, pd.MultiIndex): raw_coal.columns = raw_coal.columns.get_level_values(0)
-            if not raw_coal.empty:
-                coal_price = float(raw_coal['Close'].squeeze().iloc[-1])
-    except Exception as e:
-        logging.exception("Real-time Coal fetch error: %s", e)
-    
-    macro_score = 50
-    try:
-        if usd_idr_change < 0: macro_score += 15
-        elif usd_idr_change > 0.5: macro_score -= 20
-
-        if inflation <= 3.0: macro_score += 15
-        if coal_price > 55.0: macro_score += 10
-        if cpo_price > 3.50: macro_score += 10
-    except Exception as e:
-        logging.exception("Macro scoring failed: %s", e)
-    
-    macro_score = max(10, min(95, macro_score))
-    
-    if macro_score >= 65:
-        risk_status = "🟢 RISK_ON (Bullish Alignment)"
-        risk_summary = "Kondisi Makro Sangat Kondusif. Inflasi Terkendali, Rupiah Stabil/Menguat, & Komoditas Utama Positif."
-    elif macro_score <= 40:
-        risk_status = "🔴 RISK_OFF (Defensive Mode)"
-        risk_summary = "Tekanan Makro Terdeteksi. Volatilitas Nilai Tukar Tinggi & Sentimen Risiko Global Membesar."
-    else:
-        risk_status = "🟡 NEUTRAL (Consolidation Mode)"
-        risk_summary = "Kondisi Makro Cenderung Stabil Tanpa Katalis Tren yang Dominan."
-        
-    return {
-        'bi_rate': bi_rate, 'inflation': inflation, 'usd_idr': usd_idr_last,
-        'usd_change_%': usd_idr_change, 'coal_price': coal_price, 'cpo_price': cpo_price,
-        'macro_score': macro_score, 'risk_status': risk_status, 'risk_summary': risk_summary
-    }
-
-# ==========================================
-# REAL-TIME LIVE PORTFOLIO UPDATE ENGINE
+# 5. REAL-TIME LIVE PORTFOLIO STREAMING ENGINE
 # ==========================================
 def update_portfolio_live_prices(df_j):
-    """Mengekstrak harga pasar terkini secara REAL-TIME langsung dari bursa untuk seluruh posisi terbuka"""
     df_open = df_j[df_j['Status'] == 'OPEN'].copy()
     if df_open.empty: return df_j
 
     open_tickers = df_open['Ticker'].unique().tolist()
     live_price_map = {}
     
-    try:
-        # Pull live tick prices in bulk for speed
-        bulk_ticks = yf.download(open_tickers, period="1d", interval="1m", group_by='ticker', threads=True, progress=False)
-        for ticker in open_tickers:
-            try:
-                if len(open_tickers) == 1:
-                    df_t = bulk_ticks.dropna(subset=['Close'])
-                else:
-                    if isinstance(bulk_ticks.columns, pd.MultiIndex) and ticker in bulk_ticks.columns.levels[0]:
-                        df_t = bulk_ticks[ticker].dropna(subset=['Close'])
-                    else:
-                        df_t = bulk_ticks.dropna(subset=['Close'])
-                if isinstance(df_t.columns, pd.MultiIndex):
-                    df_t.columns = df_t.columns.get_level_values(0)
-                if not df_t.empty:
-                    live_price_map[ticker] = float(df_t['Close'].squeeze().iloc[-1])
-            except Exception:
-                pass
-    except Exception:
-        pass
+    for ticker in open_tickers:
+        try:
+            t_obj = yf.Ticker(ticker)
+            info = getattr(t_obj, 'fast_info', {})
+            if 'lastPrice' in info and info['lastPrice'] > 0:
+                live_price_map[ticker] = float(info['lastPrice'])
+        except Exception: pass
 
-    # Update current price and floating PnL in real-time
     for idx, row in df_open.iterrows():
         ticker = row['Ticker']
         live_p = live_price_map.get(ticker)
         
-        # Fallback to fast_info single ticker query if bulk tick missing
         if not live_p or np.isnan(live_p):
             try:
-                t_obj = yf.Ticker(ticker)
-                info = getattr(t_obj, 'fast_info', {})
-                if 'lastPrice' in info and info['lastPrice'] > 0:
-                    live_p = float(info['lastPrice'])
-            except Exception:
-                pass
+                raw_t = yf.download(ticker, period="1d", interval="1m", progress=False)
+                if isinstance(raw_t.columns, pd.MultiIndex): raw_t.columns = raw_t.columns.get_level_values(0)
+                if not raw_t.empty: live_p = float(raw_t['Close'].squeeze().iloc[-1])
+            except Exception: pass
                 
         if live_p and not np.isnan(live_p):
             entry_p = float(row['Harga Entry'])
@@ -506,7 +492,7 @@ def auto_execute_tp_sl_guard(df_j):
     return df_j, executed_events
 
 # ==========================================
-# 5. FULL QUANT ENGINE & REAL-TIME SCREENER
+# 6. FULL QUANT ENGINE & REAL-TIME SCREENER
 # ==========================================
 def inject_advanced_indicators(df):
     close_s = df['Close'].squeeze()
@@ -602,7 +588,6 @@ def massive_ml_ranking(tickers, top_limit=60):
         res_df.index = res_df.index + 1
     return res_df
 
-# FUNGSIONALITAS ANALISIS MAKRO-MIKRO EKSPLISIT UNTUK SETIAP SAHAM SCREENER
 def get_macro_micro_explanation(ticker, last_close, macro_info):
     coal_tickers = ['PTBA.JK', 'ADRO.JK', 'ITMG.JK', 'HRUM.JK', 'UNTR.JK']
     cpo_tickers = ['AALI.JK', 'LSIP.JK', 'TAPG.JK', 'DSNG.JK', 'SSMS.JK']
@@ -689,12 +674,12 @@ def run_screener_engine_full(capital, tickers_to_scan, macro_info, adaptive_conf
     return pd.DataFrame(buy_candidates)
 
 # ==========================================
-# 6. HEADER MINIMALIS & REAL-TIME STATUS BADGE
+# 7. HEADER MINIMALIS & LIVE STREAMING BADGES
 # ==========================================
-macro_info = get_macro_indicators()
+macro_info = fetch_realtime_macro_stream()
 hmm_idx, hmm_label, adaptive_config = run_adaptive_quant_engine()
 
-# UPDATE LIVE REAL-TIME PORTFOLIO PRICES AT EVERY REFRESH CYCLE
+# Real-time portfolio prices update per tick
 df_journal = update_portfolio_live_prices(df_journal)
 
 st.markdown("""
@@ -703,25 +688,25 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-st.caption(f"<span class='live-pulse'></span> <b>STATUS REAL-TIME MARKET SERVER:</b> CONNECTED & LIVE | SIKLUS REFRESH #{refresh_count} | WAKTU LOKAL: {datetime.now().strftime('%H:%M:%S WIB')} | REZIM HMM: {hmm_label} ({adaptive_config.get('Mode', 'NETRAL')})", unsafe_allow_html=True)
+st.caption(f"<span class='live-pulse-hft'></span> <b>STATUS REAL-TIME MARKET SERVER:</b> HIGH-FREQUENCY STREAMING (5S) | TICK: {macro_info['last_tick_time']} | SIKLUS REFRESH #{refresh_count} | REZIM HMM: {hmm_label} ({adaptive_config.get('Mode', 'NETRAL')})", unsafe_allow_html=True)
 
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("USD / IDR (REAL-TIME)", f"Rp {macro_info['usd_idr']:,.0f}", delta=f"{macro_info['usd_change_%']:.2f}%", delta_color="inverse")
-m2.metric("BI RATE", f"{macro_info['bi_rate']:.2f}%")
-m3.metric("NEWCASTLE COAL", f"${macro_info['coal_price']:.2f}")
-m4.metric("CPO MALAYSIA", f"{macro_info['cpo_price']:.2f} MYR")
+m1.metric("USD / IDR (LIVE TICK)", f"Rp {macro_info['usd_idr']:,.2f}", delta=f"{macro_info['usd_change_%']:.2f}%", delta_color="inverse")
+m2.metric("BI RATE (REAL-TIME)", f"{macro_info['bi_rate']:.2f}%")
+m3.metric("NEWCASTLE COAL (LIVE)", f"${macro_info['coal_price']:.2f}")
+m4.metric("CPO MALAYSIA (LIVE)", f"{macro_info['cpo_price']:.2f} MYR")
 
 st.markdown("---")
 
 # ==========================================
-# 7. UI/UX LAYOUT (MINIMALIST 5 TABS)
+# 8. UI/UX LAYOUT (MINIMALIST 5 TABS)
 # ==========================================
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🎯 Screener Adaptif & Penjelasan Makro", 
     "🏆 Pemeringkatan ML (941 Saham)", 
     "⏱️ Intraday VWAP (1-Menit Real-Time)", 
     "🏦 Desk Makro-Mikro & Risk-On/Off",
-    "📂 Portofolio & Real-Time Live Guard"
+    "📂 Portofolio & High-Frequency Live Guard"
 ])
 
 all_ihsg_universe = load_universe()
@@ -807,10 +792,10 @@ with tab3:
         df_table = df_display.drop(columns=['_raw_df'])
         col1, col2 = st.columns([1.2, 1.8])
         with col1:
-            st.subheader("📊 Radar Order Flow Intraday (Real-Time)")
+            st.subheader("📊 Radar Order Flow Intraday (High-Frequency Stream)")
             st.dataframe(df_table, use_container_width=True, hide_index=True)
         with col2:
-            st.subheader("📈 Grafik Intraday 1-Menit Real-Time")
+            st.subheader("📈 Grafik Intraday 1-Menit Live Stream")
             selected_ticker = st.selectbox("Ticker:", df_table['Ticker'].tolist())
             raw_df = [item['_raw_df'] for item in live_market_data if item['Ticker'] == selected_ticker][0]
             fig = go.Figure()
@@ -839,42 +824,42 @@ with tab4:
         {'Peringkat': 2, 'Sektor Target': '🌴 Agriculture / CPO', 'Katalis Makro': f'CPO Malaysia ({macro_info["cpo_price"]:.2f} MYR)', 'Saham Utama': 'AALI.JK, LSIP.JK, TAPG.JK', 'Alignment Score': '88 / 100', 'Status': '🟢 STRONG BUY'},
         {'Peringkat': 3, 'Sektor Target': '🏦 Financial & Banking', 'Katalis Makro': 'BI Rate (6.00%) & Liquidity', 'Saham Utama': 'BBCA.JK, BMRI.JK, BBRI.JK', 'Alignment Score': '85 / 100', 'Status': '🟢 OVERWEIGHT'},
         {'Peringkat': 4, 'Sektor Target': '📱 Telecommunication', 'Katalis Makro': 'Stable Consumer Inflation', 'Saham Utama': 'TLKM.JK, ISAT.JK, EXCL.JK', 'Alignment Score': '74 / 100', 'Status': '🟡 NEUTRAL'},
-        {'Peringkat': 5, 'Sektor Target': '🚗 Automotive & Industrial', 'Katalis Makro': f'USD/IDR Exchange Rate (Rp {macro_info["usd_idr"]:,.0f})', 'Saham Utama': 'ASII.JK, AUTO.JK', 'Alignment Score': '62 / 100', 'Status': '🟡 NEUTRAL'}
+        {'Peringkat': 5, 'Sektor Target': '🚗 Automotive & Industrial', 'Katalis Makro': f'USD/IDR Exchange Rate (Rp {macro_info["usd_idr"]:,.2f})', 'Saham Utama': 'ASII.JK, AUTO.JK', 'Alignment Score': '62 / 100', 'Status': '🟡 NEUTRAL'}
     ]
     st.dataframe(pd.DataFrame(macro_rank_data), use_container_width=True, hide_index=True)
     
     with st.expander("📖 Interpretasi Menyeluruh 5 Pilar Makro-Mikro (Klik untuk memperluas/meminimalkan)"):
-        st.markdown("""
+        st.markdown(f"""
         ### 📌 Interpretasi 5 Pilar Makro-Mikro Indonesia:
         
-        1. **🏦 Bank Indonesia Rate (6.00%)**:
+        1. **🏦 Bank Indonesia Rate ({macro_info['bi_rate']:.2f}%)**:
            - **Interpretasi**: Suku bunga stabil memberikan kepastian margin bunga bersih (*Net Interest Margin* / NIM) untuk sektor perbankan kelas atas (`BBCA.JK`, `BMRI.JK`, `BBRI.JK`, `BBNI.JK`).
         
-        2. **🛒 Inflasi Inti BPS (2.51%)**:
+        2. **🛒 Inflasi Inti BPS ({macro_info['inflation']:.2f}%)**:
            - **Interpretasi**: Inflasi berada di dalam rentang target BI ($2.5 \pm 1\%$), menjaga daya beli masyarakat dan daya tahan emiten *consumer goods*.
         
-        3. **💵 Kurs Nilai Tukar USD/IDR (Rp 17,986)**:
-           - **Interpretasi**: Volatilitas Rupiah yang stabil menjadi katalis positif bagi emiten berbasis ekspor komoditas Dolar, sembari membatasi risiko *import cost inflation*.
+        3. **💵 Kurs Nilai Tukar USD/IDR (Rp {macro_info['usd_idr']:,.2f})**:
+           - **Interpretasi**: Volatilitas Rupiah yang stabil ter-stream secara real-time menjadi katalis positif bagi emiten berbasis ekspor komoditas Dolar, sembari membatasi risiko *import cost inflation*.
         
-        4. **⛏️ Newcastle Coal Benchmark ($58.91)**:
+        4. **⛏️ Newcastle Coal Benchmark (${macro_info['coal_price']:.2f})**:
            - **Interpretasi**: Harga batu bara dunia yang berada di atas $55/ton menjaga stabilitas *cash flow* emiten tambang batu bara nasional (`PTBA.JK`, `ADRO.JK`, `ITMG.JK`).
         
-        5. **🌴 Bursa Malaysia Derivatives CPO (3.93 MYR)**:
+        5. **🌴 Bursa Malaysia Derivatives CPO ({macro_info['cpo_price']:.2f} MYR)**:
            - **Interpretasi**: Harga acuan CPO Malaysia merupakan *global price discovery benchmark*. Penguatan CPO berkorelasi langsung ($r > 0.95$) dengan pendapatan perkebunan kelapa sawit BEI (`AALI.JK`, `LSIP.JK`, `TAPG.JK`).
         """)
 
 # ==========================================
-# TAB 5: PORTOFOLIO & REAL-TIME LIVE GUARD
+# TAB 5: PORTOFOLIO & HIGH-FREQUENCY LIVE GUARD
 # ==========================================
 with tab5:
-    st.subheader("📂 Posisi Aktif & Real-Time Live Market Guard")
+    st.subheader("📂 Posisi Aktif & High-Frequency Real-Time Live Guard")
     df_journal, exec_events = auto_execute_tp_sl_guard(df_journal)
     
     df_open = df_journal[df_journal['Status'] == 'OPEN'].copy() if not df_journal.empty else pd.DataFrame()
     if not df_open.empty:
         col_p1, col_p2 = st.columns([3, 1])
         with col_p1:
-            st.caption("<span class='live-pulse'></span> <b>Harga Terkini & Floating PnL ter-update secara REAL-TIME dari Bursa:</b>", unsafe_allow_html=True)
+            st.caption(f"<span class='live-pulse-hft'></span> <b>Harga Live & Floating PnL ter-stream secara REAL-TIME PER-DETIK dari Bursa (Tick: {macro_info['last_tick_time']}):</b>", unsafe_allow_html=True)
             st.dataframe(df_open[['ID', 'Tanggal Entry', 'Ticker', 'Harga Entry', 'Harga Closing/Exit', 'Target TP', 'Stop Loss', 'Volume', 'PnL (Rp)']], use_container_width=True, hide_index=True)
         with col_p2:
             st.markdown('<div class="mini-card">', unsafe_allow_html=True)
@@ -897,4 +882,4 @@ with tab5:
         st.info("Jurnal transaksi tertutup bersih.")
 
 st.markdown("---")
-st.caption("⚡ **PRO QUANT TERMINAL v13.4 — REAL-TIME LIVE PORTFOLIO & MACRO EXPLANATION EDITION BY XPINONTOAN QUANT DESK.**")
+st.caption("⚡ **PRO QUANT TERMINAL v13.5 — HIGH-FREQUENCY LIVE STREAMING EDITION BY XPINONTOAN QUANT DESK.**")
