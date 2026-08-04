@@ -1,0 +1,33 @@
+// Amibroker Real-time Bridge to Web Dashboard
+// Petunjuk: 
+// 1. Jalankan script ini di Amibroker (bisa melalui Analysis -> Auto-Repeat setiap 1 detik, atau jadikan indikator di chart).
+// 2. Pastikan filepath menunjuk ke folder yang benar di komputer Anda.
+
+filepath = "C:\\Users\\HELLO\\.gemini\\antigravity\\scratch\\trading-dashboard\\amidata.json";
+fh = fopen( filepath, "w" );
+
+if( fh )
+{
+    // Mengambil data bar terakhir yang sedang berjalan
+    currentClose = LastValue(Close);
+    currentOpen = LastValue(Open);
+    currentHigh = LastValue(High);
+    currentLow = LastValue(Low);
+    currentVol = LastValue(Volume);
+    
+    // Indikator sederhana
+    ema9 = LastValue(EMA(Close, 9));
+    
+    json = "{";
+    json += "\"ticker\": \"" + Name() + "\",";
+    json += "\"close\": " + currentClose + ",";
+    json += "\"open\": " + currentOpen + ",";
+    json += "\"high\": " + currentHigh + ",";
+    json += "\"low\": " + currentLow + ",";
+    json += "\"volume\": " + currentVol + ",";
+    json += "\"ema9\": " + ema9;
+    json += "}";
+    
+    fputs( json, fh );
+    fclose( fh );
+}

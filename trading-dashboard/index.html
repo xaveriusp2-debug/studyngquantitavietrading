@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockTrend Pro - Analisis Saham & Right Issue</title>
+    <meta name="description" content="Dashboard analisis saham teknikal dan right issue terintegrasi.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">
+            <span class="icon">📈</span>
+            <h1>StockTrend <span class="highlight">Pro</span></h1>
+        </div>
+        <ul class="nav-links">
+            <li><a href="#" class="active">Dashboard</a></li>
+            <li><a href="#">Fundamental</a></li>
+            <li><a href="#">Teknikal</a></li>
+            <li><a href="#">Right Issue</a></li>
+            <li><a href="#">Portofolio</a></li>
+        </ul>
+        <div class="user-profile">
+            <img src="https://ui-avatars.com/api/?name=Trader&background=3b82f6&color=fff" alt="User">
+        </div>
+    </nav>
+
+    <main class="dashboard">
+        <header class="dashboard-header">
+            <h2>Market Overview</h2>
+            <p>Data prediksi trend berdasarkan analisis teknikal dan jadwal Right Issue.</p>
+        </header>
+
+        <section class="summary-cards">
+            <div class="glass-card summary-card">
+                <div class="card-icon blue">📘</div>
+                <div class="card-info">
+                    <h3>IHSG</h3>
+                    <p class="value" id="ihsg-value">7,245.12</p>
+                    <p class="change positive">+0.85%</p>
+                </div>
+            </div>
+            <div class="glass-card summary-card">
+                <div class="card-icon green">🚀</div>
+                <div class="card-info">
+                    <h3>Top Trend Teknikal</h3>
+                    <p class="value">BBCA</p>
+                    <p class="change positive">Strong Buy</p>
+                </div>
+            </div>
+            <div class="glass-card summary-card">
+                <div class="card-icon purple">💼</div>
+                <div class="card-info">
+                    <h3>Right Issue Mendatang</h3>
+                    <p class="value">5 Emiten</p>
+                    <p class="change neutral">Minggu Ini</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="main-content">
+            <div class="glass-card table-section">
+                <div class="section-header">
+                    <h3>Rekomendasi Saham Trend (Stockbit Data Mock)</h3>
+                    <div class="filters">
+                        <select id="filter-trend">
+                            <option value="all">Semua Sektor</option>
+                            <option value="finance">Keuangan</option>
+                            <option value="energy">Energi</option>
+                            <option value="tech">Teknologi</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Kode</th>
+                                <th>Perusahaan</th>
+                                <th>Harga</th>
+                                <th>Trend Teknikal</th>
+                                <th>Indikator Utama</th>
+                                <th>Status Right Issue</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stock-data-body">
+                            <!-- Data will be injected here via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="glass-card chart-section">
+                <div class="section-header">
+                    <h3>Trend Momentum</h3>
+                </div>
+                <div class="chart-container">
+                    <!-- Placeholder for a simple visual representation -->
+                    <div class="mock-chart">
+                        <div class="bar" style="height: 40%;" data-tooltip="Senin"></div>
+                        <div class="bar" style="height: 60%;" data-tooltip="Selasa"></div>
+                        <div class="bar" style="height: 50%;" data-tooltip="Rabu"></div>
+                        <div class="bar" style="height: 80%;" data-tooltip="Kamis"></div>
+                        <div class="bar" style="height: 95%;" data-tooltip="Jumat"></div>
+                    </div>
+                    <p class="chart-label">Volume Transaksi Saham Trend</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="fundamental-content" style="margin-top: 1.5rem;">
+            <div class="glass-card table-section">
+                <div class="section-header">
+                    <h3>Rekomendasi Saham Fundamental (Laporan Keuangan & Manajemen)</h3>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Kode</th>
+                                <th>Perusahaan</th>
+                                <th>Kinerja Keuangan</th>
+                                <th>Posisi Perusahaan</th>
+                                <th>Kualitas Manajemen</th>
+                                <th>Valuasi</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fundamental-data-body">
+                            <!-- Data will be injected here via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ALGO TRADING SIGNALS SECTION -->
+        <section class="algo-trading-content" style="margin-top: 1.5rem;">
+            <div class="glass-card table-section">
+                <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                    <div>
+                        <h3 style="color: var(--primary); display: flex; align-items: center; gap: 0.5rem;"><span style="animation: pulse 2s infinite; color: var(--danger);">🔴</span> HFT AI Scalping System</h3>
+                        <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.2rem;">Sistem pendeteksi HAKA/HAKI dan anomali volume dalam hitungan milidetik.</p>
+                    </div>
+                    <div style="text-align: right; background: rgba(15, 23, 42, 0.8); padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid var(--glass-border);">
+                        <div class="badge neutral" style="font-family: monospace; font-size: 0.9rem; margin-bottom: 0.3rem;" id="live-datetime">21 April 2026 09:00:00.000</div>
+                        <div style="display: flex; flex-direction: column; gap: 0.2rem; align-items: flex-end;">
+                            <div style="font-size: 0.75rem; color: var(--success); display: flex; align-items: center; gap: 0.3rem;">
+                                <span style="width: 6px; height: 6px; background: var(--success); border-radius: 50%; display: inline-block;"></span> HFT Engine: Online
+                            </div>
+                            <div id="amibroker-status" style="font-size: 0.75rem; color: var(--warning); display: flex; align-items: center; gap: 0.3rem;">
+                                <span style="width: 6px; height: 6px; background: var(--warning); border-radius: 50%; display: inline-block; animation: pulse 1s infinite;"></span> Amibroker: Connecting...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-top: 1rem;">
+                    <!-- AI Signals Feed -->
+                    <div class="signal-feed-container" style="background: rgba(2, 6, 23, 0.8); border-radius: 8px; padding: 1rem; height: 320px; overflow-y: hidden; display: flex; flex-direction: column; gap: 0.5rem; border: 1px solid var(--glass-border); position: relative;">
+                        <div style="position: absolute; top: 0; left: 0; right: 0; height: 30px; background: linear-gradient(to bottom, rgba(2,6,23,0.9), transparent); z-index: 10;"></div>
+                        <div id="ai-signals-list" style="overflow-y: auto; height: 100%; padding-right: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                            <!-- Auto-generated signals will appear here -->
+                        </div>
+                        <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 30px; background: linear-gradient(to top, rgba(2,6,23,0.9), transparent); z-index: 10;"></div>
+                    </div>
+
+                    <!-- KSEI Broker Summary Mock -->
+                    <div class="broker-summary-container" style="background: rgba(2, 6, 23, 0.8); border-radius: 8px; padding: 1rem; height: 320px; border: 1px solid var(--glass-border); display: flex; flex-direction: column;">
+                        <h4 style="color: var(--primary); margin-bottom: 0.8rem; font-size: 0.95rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.5rem; display: flex; justify-content: space-between;">
+                            <span>🏢 Live Bandarmologi (KSEI Mock)</span>
+                        </h4>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted); padding: 0 0.5rem 0.5rem 0.5rem; border-bottom: 1px dashed var(--glass-border);">
+                            <span>Top Buyer</span>
+                            <span>Net Vol</span>
+                            <span>Top Seller</span>
+                        </div>
+                        <div id="broker-list" style="overflow-y: hidden; flex: 1; padding-top: 0.5rem; display: flex; flex-direction: column; gap: 0.4rem; font-family: monospace;">
+                            <!-- Broker summary rows injected via JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- LIVE RUNNING TRADE TICKER -->
+        <section class="running-trade-section" style="margin-top: 1.5rem; margin-bottom: 2rem;">
+            <div class="glass-card" style="padding: 1rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <span class="badge ri-active" style="white-space: nowrap; font-weight: bold; font-size: 0.8rem;">LIVE TAPE READING</span>
+                    <div id="ticker-container" style="overflow: hidden; white-space: nowrap; width: 100%; position: relative;">
+                        <div id="ticker-content" style="display: inline-block; padding-left: 100%;">
+                            <!-- Ticker items injected via JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>

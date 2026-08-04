@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinanceFlow — Personal Finance Tracker</title>
+  <meta name="description" content="Aplikasi pelacak keuangan pribadi yang lengkap. Kelola pemasukan, pengeluaran, budget, dan tabungan Anda dengan mudah." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <div class="logo-icon">💎</div>
+        <span class="logo-text">FinanceFlow</span>
+      </div>
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active" data-page="dashboard" id="nav-dashboard">
+        <span class="nav-icon">📊</span>
+        <span class="nav-label">Dashboard</span>
+      </a>
+      <a href="#" class="nav-item" data-page="transactions" id="nav-transactions">
+        <span class="nav-icon">💳</span>
+        <span class="nav-label">Transaksi</span>
+      </a>
+      <a href="#" class="nav-item" data-page="budget" id="nav-budget">
+        <span class="nav-icon">🎯</span>
+        <span class="nav-label">Budget</span>
+      </a>
+      <a href="#" class="nav-item" data-page="savings" id="nav-savings">
+        <span class="nav-icon">🏦</span>
+        <span class="nav-label">Tabungan</span>
+      </a>
+      <a href="#" class="nav-item" data-page="analytics" id="nav-analytics">
+        <span class="nav-icon">📈</span>
+        <span class="nav-label">Analitik</span>
+      </a>
+      <a href="#" class="nav-item" data-page="categories" id="nav-categories">
+        <span class="nav-icon">🏷️</span>
+        <span class="nav-label">Kategori</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-profile">
+        <div class="avatar">FF</div>
+        <div class="user-info">
+          <div class="user-name">Finance User</div>
+          <div class="user-plan">Pro Account</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content" id="mainContent">
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 class="page-title" id="pageTitle">Dashboard</h1>
+        <p class="page-subtitle" id="pageSubtitle">Selamat datang kembali! Berikut ringkasan keuangan Anda.</p>
+      </div>
+      <div class="topbar-right">
+        <div class="month-selector">
+          <button class="month-btn" id="prevMonth">‹</button>
+          <span class="current-month" id="currentMonthLabel">Mei 2026</span>
+          <button class="month-btn" id="nextMonth">›</button>
+        </div>
+        <button class="btn-primary" id="addTransactionBtn">
+          <span>+</span> Tambah Transaksi
+        </button>
+      </div>
+    </header>
+
+    <!-- Pages -->
+    <div class="page-content">
+
+      <!-- ===== DASHBOARD PAGE ===== -->
+      <section class="page active" id="page-dashboard">
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+          <div class="stat-card balance-card">
+            <div class="stat-header">
+              <span class="stat-label">Total Saldo</span>
+              <span class="stat-icon">💰</span>
+            </div>
+            <div class="stat-value" id="totalBalance">Rp 0</div>
+            <div class="stat-change positive" id="balanceChange">
+              <span>↑</span> <span id="balanceChangeVal">0%</span> dari bulan lalu
+            </div>
+          </div>
+
+          <div class="stat-card income-card">
+            <div class="stat-header">
+              <span class="stat-label">Pemasukan Bulan Ini</span>
+              <span class="stat-icon">📥</span>
+            </div>
+            <div class="stat-value" id="monthIncome">Rp 0</div>
+            <div class="stat-change positive" id="incomeChange">
+              <span>↑</span> <span id="incomeChangeVal">0%</span> dari bulan lalu
+            </div>
+          </div>
+
+          <div class="stat-card expense-card">
+            <div class="stat-header">
+              <span class="stat-label">Pengeluaran Bulan Ini</span>
+              <span class="stat-icon">📤</span>
+            </div>
+            <div class="stat-value" id="monthExpense">Rp 0</div>
+            <div class="stat-change negative" id="expenseChange">
+              <span>↑</span> <span id="expenseChangeVal">0%</span> dari bulan lalu
+            </div>
+          </div>
+
+          <div class="stat-card savings-rate-card">
+            <div class="stat-header">
+              <span class="stat-label">Tingkat Tabungan</span>
+              <span class="stat-icon">🎯</span>
+            </div>
+            <div class="stat-value" id="savingsRate">0%</div>
+            <div class="stat-change" id="savingsRateChange">
+              Dari total pemasukan bulan ini
+            </div>
+          </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="charts-row">
+          <div class="chart-card wide">
+            <div class="chart-card-header">
+              <h3>Tren Keuangan 6 Bulan</h3>
+              <div class="chart-legend">
+                <span class="legend-dot income"></span> Pemasukan
+                <span class="legend-dot expense"></span> Pengeluaran
+              </div>
+            </div>
+            <div class="chart-container">
+              <canvas id="trendChart"></canvas>
+            </div>
+          </div>
+
+          <div class="chart-card">
+            <div class="chart-card-header">
+              <h3>Pengeluaran per Kategori</h3>
+            </div>
+            <div class="chart-container donut-container">
+              <canvas id="categoryChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Transactions & Budget Overview -->
+        <div class="bottom-row">
+          <div class="recent-transactions-card">
+            <div class="card-header">
+              <h3>Transaksi Terbaru</h3>
+              <a href="#" class="see-all" data-goto="transactions">Lihat Semua →</a>
+            </div>
+            <div class="transactions-list" id="recentTransactionsList">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <div class="budget-overview-card">
+            <div class="card-header">
+              <h3>Budget Overview</h3>
+              <a href="#" class="see-all" data-goto="budget">Kelola →</a>
+            </div>
+            <div class="budget-list" id="dashboardBudgetList">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== TRANSACTIONS PAGE ===== -->
+      <section class="page" id="page-transactions">
+        <div class="transactions-toolbar">
+          <div class="search-bar">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchTransaction" placeholder="Cari transaksi..." />
+          </div>
+          <div class="filter-group">
+            <select id="filterType" class="filter-select">
+              <option value="">Semua Tipe</option>
+              <option value="income">Pemasukan</option>
+              <option value="expense">Pengeluaran</option>
+            </select>
+            <select id="filterCategory" class="filter-select">
+              <option value="">Semua Kategori</option>
+            </select>
+            <input type="month" id="filterMonth" class="filter-select" />
+          </div>
+          <div class="toolbar-actions">
+            <button class="btn-outline" id="exportCSV">📥 Export CSV</button>
+            <button class="btn-outline" id="importCSVBtn">📤 Import</button>
+            <input type="file" id="importCSVInput" accept=".csv" style="display:none" />
+          </div>
+        </div>
+
+        <div class="transactions-summary-bar">
+          <div class="ts-item">
+            <span class="ts-label">Total Pemasukan</span>
+            <span class="ts-value income" id="filteredIncome">Rp 0</span>
+          </div>
+          <div class="ts-divider"></div>
+          <div class="ts-item">
+            <span class="ts-label">Total Pengeluaran</span>
+            <span class="ts-value expense" id="filteredExpense">Rp 0</span>
+          </div>
+          <div class="ts-divider"></div>
+          <div class="ts-item">
+            <span class="ts-label">Selisih</span>
+            <span class="ts-value" id="filteredNet">Rp 0</span>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="transactions-table" id="transactionsTable">
+            <thead>
+              <tr>
+                <th>Tanggal</th>
+                <th>Deskripsi</th>
+                <th>Kategori</th>
+                <th>Tipe</th>
+                <th class="text-right">Jumlah</th>
+                <th class="text-center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="transactionsTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+          <div class="empty-state" id="transactionsEmpty" style="display:none">
+            <div class="empty-icon">💳</div>
+            <h3>Belum Ada Transaksi</h3>
+            <p>Mulai tambahkan transaksi pertama Anda!</p>
+            <button class="btn-primary" id="addFirstTransaction">+ Tambah Transaksi</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== BUDGET PAGE ===== -->
+      <section class="page" id="page-budget">
+        <div class="budget-toolbar">
+          <div class="budget-month-info">
+            <span>Budget untuk <strong id="budgetMonthLabel">bulan ini</strong></span>
+          </div>
+          <button class="btn-primary" id="addBudgetBtn">+ Tambah Budget</button>
+        </div>
+
+        <div class="budget-summary-cards">
+          <div class="budget-stat">
+            <span class="bs-label">Total Budget</span>
+            <span class="bs-value" id="totalBudget">Rp 0</span>
+          </div>
+          <div class="budget-stat">
+            <span class="bs-label">Total Terpakai</span>
+            <span class="bs-value expense" id="totalSpent">Rp 0</span>
+          </div>
+          <div class="budget-stat">
+            <span class="bs-label">Sisa Budget</span>
+            <span class="bs-value income" id="totalRemaining">Rp 0</span>
+          </div>
+          <div class="budget-stat">
+            <span class="bs-label">% Terpakai</span>
+            <span class="bs-value" id="budgetUsedPct">0%</span>
+          </div>
+        </div>
+
+        <div class="budget-grid" id="budgetGrid">
+          <!-- Dynamically populated -->
+        </div>
+
+        <div class="empty-state" id="budgetEmpty" style="display:none">
+          <div class="empty-icon">🎯</div>
+          <h3>Belum Ada Budget</h3>
+          <p>Set budget per kategori untuk memantau pengeluaran Anda!</p>
+          <button class="btn-primary" id="addFirstBudget">+ Tambah Budget</button>
+        </div>
+      </section>
+
+      <!-- ===== SAVINGS PAGE ===== -->
+      <section class="page" id="page-savings">
+        <div class="savings-toolbar">
+          <h2 class="section-heading">Target Tabungan Anda</h2>
+          <button class="btn-primary" id="addGoalBtn">+ Tambah Goal</button>
+        </div>
+
+        <div class="savings-summary">
+          <div class="savings-stat-card">
+            <div class="ss-icon">🏦</div>
+            <div class="ss-content">
+              <div class="ss-label">Total Target</div>
+              <div class="ss-value" id="totalSavingsTarget">Rp 0</div>
+            </div>
+          </div>
+          <div class="savings-stat-card">
+            <div class="ss-icon">✅</div>
+            <div class="ss-content">
+              <div class="ss-label">Total Terkumpul</div>
+              <div class="ss-value" id="totalSavingsCollected">Rp 0</div>
+            </div>
+          </div>
+          <div class="savings-stat-card">
+            <div class="ss-icon">🎯</div>
+            <div class="ss-content">
+              <div class="ss-label">Goals Aktif</div>
+              <div class="ss-value" id="activeGoalsCount">0</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="savings-grid" id="savingsGrid">
+          <!-- Dynamically populated -->
+        </div>
+
+        <div class="empty-state" id="savingsEmpty" style="display:none">
+          <div class="empty-icon">🏦</div>
+          <h3>Belum Ada Target Tabungan</h3>
+          <p>Buat target tabungan untuk meraih impian finansial Anda!</p>
+          <button class="btn-primary" id="addFirstGoal">+ Buat Goal Pertama</button>
+        </div>
+      </section>
+
+      <!-- ===== ANALYTICS PAGE ===== -->
+      <section class="page" id="page-analytics">
+        <div class="analytics-grid">
+          <!-- Income vs Expense by Month -->
+          <div class="analytics-card full-width">
+            <div class="analytics-card-header">
+              <h3>📊 Pemasukan vs Pengeluaran (12 Bulan)</h3>
+            </div>
+            <div class="chart-container tall">
+              <canvas id="analyticsBarChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Category Breakdown -->
+          <div class="analytics-card">
+            <div class="analytics-card-header">
+              <h3>🥧 Pengeluaran per Kategori</h3>
+              <select id="analyticsPeriod" class="filter-select small">
+                <option value="1">1 Bulan</option>
+                <option value="3">3 Bulan</option>
+                <option value="6" selected>6 Bulan</option>
+                <option value="12">12 Bulan</option>
+              </select>
+            </div>
+            <div class="chart-container">
+              <canvas id="analyticsPieChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Net Worth Trend -->
+          <div class="analytics-card">
+            <div class="analytics-card-header">
+              <h3>📈 Tren Net Worth</h3>
+            </div>
+            <div class="chart-container">
+              <canvas id="netWorthChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Category Table -->
+          <div class="analytics-card full-width">
+            <div class="analytics-card-header">
+              <h3>📋 Rincian per Kategori</h3>
+            </div>
+            <div class="category-breakdown-table">
+              <table class="transactions-table">
+                <thead>
+                  <tr>
+                    <th>Kategori</th>
+                    <th class="text-right">Total Pengeluaran</th>
+                    <th class="text-right">% dari Total</th>
+                    <th class="text-right">Rata-rata/Bulan</th>
+                    <th>Tren</th>
+                  </tr>
+                </thead>
+                <tbody id="categoryBreakdownTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== CATEGORIES PAGE ===== -->
+      <section class="page" id="page-categories">
+        <div class="categories-toolbar">
+          <div class="categories-tabs">
+            <button class="cat-tab active" data-type="expense" id="catTabExpense">Pengeluaran</button>
+            <button class="cat-tab" data-type="income" id="catTabIncome">Pemasukan</button>
+          </div>
+          <button class="btn-primary" id="addCategoryBtn">+ Tambah Kategori</button>
+        </div>
+
+        <div class="categories-grid" id="categoriesGrid">
+          <!-- Dynamically populated -->
+        </div>
+      </section>
+
+    </div><!-- end page-content -->
+  </main>
+
+  <!-- ===== MODALS ===== -->
+
+  <!-- Transaction Modal -->
+  <div class="modal-overlay" id="transactionModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="transactionModalTitle">Tambah Transaksi</h2>
+        <button class="modal-close" id="closeTransactionModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="type-toggle">
+          <button class="type-btn active" data-type="expense" id="typeExpense">📤 Pengeluaran</button>
+          <button class="type-btn" data-type="income" id="typeIncome">📥 Pemasukan</button>
+        </div>
+
+        <div class="form-group">
+          <label for="txAmount">Jumlah</label>
+          <div class="amount-input-wrapper">
+            <span class="currency-prefix">Rp</span>
+            <input type="number" id="txAmount" placeholder="0" min="0" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="txDescription">Deskripsi</label>
+            <input type="text" id="txDescription" placeholder="Contoh: Makan siang" />
+          </div>
+          <div class="form-group">
+            <label for="txDate">Tanggal</label>
+            <input type="date" id="txDate" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="txCategory">Kategori</label>
+            <select id="txCategory">
+              <option value="">Pilih Kategori</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="txNote">Catatan (Opsional)</label>
+            <input type="text" id="txNote" placeholder="Catatan tambahan..." />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-outline" id="cancelTransaction">Batal</button>
+        <button class="btn-primary" id="saveTransaction">Simpan Transaksi</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Budget Modal -->
+  <div class="modal-overlay" id="budgetModal">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h2 id="budgetModalTitle">Tambah Budget</h2>
+        <button class="modal-close" id="closeBudgetModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="budgetCategory">Kategori</label>
+          <select id="budgetCategory"></select>
+        </div>
+        <div class="form-group">
+          <label for="budgetAmount">Limit Budget</label>
+          <div class="amount-input-wrapper">
+            <span class="currency-prefix">Rp</span>
+            <input type="number" id="budgetAmount" placeholder="0" min="0" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-outline" id="cancelBudget">Batal</button>
+        <button class="btn-primary" id="saveBudget">Simpan Budget</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Savings Goal Modal -->
+  <div class="modal-overlay" id="savingsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="savingsModalTitle">Tambah Target Tabungan</h2>
+        <button class="modal-close" id="closeSavingsModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="goalName">Nama Goal</label>
+            <input type="text" id="goalName" placeholder="Contoh: Liburan ke Bali" />
+          </div>
+          <div class="form-group">
+            <label for="goalEmoji">Emoji</label>
+            <input type="text" id="goalEmoji" placeholder="🏖️" maxlength="2" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="goalTarget">Target Jumlah</label>
+            <div class="amount-input-wrapper">
+              <span class="currency-prefix">Rp</span>
+              <input type="number" id="goalTarget" placeholder="0" min="0" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="goalCurrent">Sudah Terkumpul</label>
+            <div class="amount-input-wrapper">
+              <span class="currency-prefix">Rp</span>
+              <input type="number" id="goalCurrent" placeholder="0" min="0" />
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="goalDeadline">Target Tanggal</label>
+            <input type="date" id="goalDeadline" />
+          </div>
+          <div class="form-group">
+            <label for="goalColor">Warna</label>
+            <input type="color" id="goalColor" value="#6366f1" class="color-input" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-outline" id="cancelSavings">Batal</button>
+        <button class="btn-primary" id="saveSavings">Simpan Goal</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add to Savings Modal -->
+  <div class="modal-overlay" id="addToSavingsModal">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h2>Tambah Dana ke Goal</h2>
+        <button class="modal-close" id="closeAddSavingsModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Goal: <strong id="addSavingsGoalName"></strong></label>
+          <div class="goal-progress-mini">
+            <div class="mini-progress-bar">
+              <div class="mini-progress-fill" id="addSavingsMiniProgress"></div>
+            </div>
+            <span id="addSavingsMiniLabel"></span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="addSavingsAmount">Jumlah Dana</label>
+          <div class="amount-input-wrapper">
+            <span class="currency-prefix">Rp</span>
+            <input type="number" id="addSavingsAmount" placeholder="0" min="0" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-outline" id="cancelAddSavings">Batal</button>
+        <button class="btn-primary" id="confirmAddSavings">Tambah Dana</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Category Modal -->
+  <div class="modal-overlay" id="categoryModal">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h2 id="categoryModalTitle">Tambah Kategori</h2>
+        <button class="modal-close" id="closeCategoryModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="catName">Nama Kategori</label>
+            <input type="text" id="catName" placeholder="Contoh: Transportasi" />
+          </div>
+          <div class="form-group">
+            <label for="catEmoji">Emoji</label>
+            <input type="text" id="catEmoji" placeholder="🚗" maxlength="2" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="catType">Tipe</label>
+            <select id="catType">
+              <option value="expense">Pengeluaran</option>
+              <option value="income">Pemasukan</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="catColor">Warna</label>
+            <input type="color" id="catColor" value="#6366f1" class="color-input" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-outline" id="cancelCategory">Batal</button>
+        <button class="btn-primary" id="saveCategory">Simpan Kategori</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirm Modal -->
+  <div class="modal-overlay" id="deleteModal">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h2>⚠️ Konfirmasi Hapus</h2>
+        <button class="modal-close" id="closeDeleteModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="deleteModalMessage">Apakah Anda yakin ingin menghapus item ini? Tindakan ini tidak dapat dibatalkan.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-outline" id="cancelDelete">Batal</button>
+        <button class="btn-danger" id="confirmDelete">Hapus</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notifications -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
