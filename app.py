@@ -682,14 +682,30 @@ def run_sniper_engine_full(tickers_to_scan, progress_placeholder=None):
                     if ml_raw_prob >= 62.0 and validation_acc >= 0.55 and confluence >= 4:
                         atr = float(df['ATR_14'].iloc[-1]) if (not np.isnan(df['ATR_14'].iloc[-1])) else last_close * 0.02
                         sup_20d = float(df['Support_Terendah_20D'].iloc[-1]) if not pd.isna(df['Support_Terendah_20D'].iloc[-1]) else last_close * 0.96
-                        
-                        sl_price = round(min(sup_20d - (0.25 * atr), last_close - atr), 0)
-                        sl_price = max(last_close * 0.94, sl_price)
+
+                        resistance_20d = float(df['Resisten_Terakhir_20D'].iloc[-1]) if not pd.isna(df['Resisten_Terakhir_20D'].iloc[-1]) else last_close + (2 * atr)
+                        resistance_50d = float(df['Resisten_Terakhir_50D'].iloc[-1]) if not pd.isna(df['Resisten_Terakhir_50D'].iloc[-1]) else resistance_20d
+                        recent_low_5d = float(df['Low'].rolling(5).min().iloc[-1]) if len(df) >= 5 else sup_20d
+                        structural_support = min(sup_20d, recent_low_5d)
+
+                        # Stop berada di bawah support struktural; sizing membatasi kerugian,
+                        # bukan memangkas level teknikal agar terlihat lebih dekat.
+                        sl_price = round(structural_support - (0.35 * atr), 0)
+                        sl_price = min(sl_price, round(last_close - (0.5 * atr), 0))
+                        sl_price = max(1.0, sl_price)
                         potential_risk = max(1.0, last_close - sl_price)
-                        
-                        tp_price = round(last_close + (2.0 * potential_risk), 0)
+
+                        breakout_confirmed = last_close > resistance_20d and volume_confirmed and macd_hist > 0
+                        if breakout_confirmed:
+                            tp_price = round(last_close + (2.0 * atr), 0)
+                            tp_basis = 'Breakout + 2 ATR'
+                        else:
+                            resistance_target = max(resistance_20d, resistance_50d)
+                            tp_price = round(max(last_close + atr, resistance_target), 0)
+                            tp_basis = 'Resistance 20D/50D'
+                        tp_price = max(tp_price, round(last_close + atr, 0))
                         potential_reward = max(1.0, tp_price - last_close)
-                        
+
                         ev = ( (ml_raw_prob/100) * potential_reward ) - ( ((100-ml_raw_prob)/100) * potential_risk )
                         ev_pct = (ev / last_close) * 100
                         setup_score = min(100.0, (ml_raw_prob * 0.55) + (validation_acc * 100 * 0.20) + (confluence / 5 * 25))
@@ -699,6 +715,9 @@ def run_sniper_engine_full(tickers_to_scan, progress_placeholder=None):
                             'Harga Current': last_close,
                             'Target TP (3-4D)': tp_price,
                             'Stop Loss Ketat': sl_price,
+                            'Dasar Target Profit': tp_basis,
+                            'Level Support Breakdown': round(structural_support, 0),
+                            'Sinyal Breakdown': 'Waspada jika close menembus support' if last_close <= structural_support * 1.02 else 'Support masih bertahan',
                             'Setup Score': round(setup_score, 1),
                             'Win Prob (%)': round(ml_raw_prob, 1),
                             'Validasi Model (%)': round(validation_acc * 100, 1),
@@ -2562,6 +2581,9 @@ with tab6:
                     current_px = s['Harga Current']
                     tp_px = s['Target TP (3-4D)']
                     sl_px = s['Stop Loss Ketat']
+                    tp_basis = s.get('Dasar Target Profit', 'Resistance struktural')
+                    breakdown_level = s.get('Level Support Breakdown', sl_px)
+                    breakdown_signal = s.get('Sinyal Breakdown', 'Pantau support')
                     
                     upside_pct = ((tp_px - current_px) / current_px * 100) if current_px > 0 else 0
                     downside_pct = ((current_px - sl_px) / current_px * 100) if current_px > 0 else 0
@@ -2602,7 +2624,9 @@ with tab6:
                             </div>
                             
                             <div style="margin-top:10px; padding:8px; background:rgba(15,23,42,0.6); border-radius:6px; font-size:0.75rem; color:#94A3B8;">
-                                ⏱ <b style="color:#F59E0B;">Max Hold: 3–4 Hari</b> &nbsp;|&nbsp; Exit segera bila -2% dari harga entry (intraday failsafe)
+                                🎯 <b style="color:#10B981;">Basis TP: {tp_basis}</b><br>
+                                🧱 Support breakdown: <b style="color:#F59E0B;">Rp {breakdown_level:,.0f}</b> ({breakdown_signal})<br>
+                                ⏱ <b style="color:#38BDF8;">Max Hold: 3–4 Hari</b> &nbsp;|&nbsp; Exit bila support tertembus dan tekanan berlanjut
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
