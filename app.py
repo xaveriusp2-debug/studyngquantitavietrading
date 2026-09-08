@@ -318,9 +318,9 @@ if 'sniper_previous_tickers' not in st.session_state:
 if 'watchlist_live_data' not in st.session_state:
     st.session_state['watchlist_live_data'] = []
 
-# AUTO-REFRESH EXACTLY EVERY 15 SECONDS (PAUSED DURING ACTIVE SCREENER SCAN)
+# AUTO-REFRESH EVERY MINUTE (PAUSED ONLY WHILE A SYNCHRONOUS SCAN IS RUNNING)
 if not st.session_state['is_scanning']:
-    refresh_count = st_autorefresh(interval=15 * 1000, limit=None, key="screener_priority_v240")
+    refresh_count = st_autorefresh(interval=60 * 1000, limit=None, key="screener_priority_v240")
 else:
     refresh_count = 0
 
@@ -1688,7 +1688,7 @@ with col_head2:
         st.toast("✅ Data Makro-Mikro (BI, BPS, World Bank, Kebijakan Pemerintah) Berhasil Diperbarui!", icon="⚡")
         st.rerun()
 
-status_text = "PEMINDAIAN PASAR AKTIF (REFRESH PAUSED)" if st.session_state['is_scanning'] else f"STREAMING REAL-TIME (15s) | TICK: {macro_info['last_tick_time']} | SIKLUS #{refresh_count}"
+status_text = "PEMINDAIAN PASAR AKTIF (refresh dilanjutkan setelah scan)" if st.session_state['is_scanning'] else f"STREAMING REAL-TIME (60s) | TICK: {macro_info['last_tick_time']} | SIKLUS #{refresh_count}"
 
 st.caption(f"<span class='live-pulse-hft'></span> <b>STATUS REAL-TIME MARKET SERVER:</b> {status_text} | REZIM HMM: {hmm_label} ({adaptive_config.get('Mode', 'NETRAL')})", unsafe_allow_html=True)
 
