@@ -532,6 +532,17 @@ _SNIPER_FEATURE_COLS = [
     'ATR_Ratio',
 ]
 
+@st.cache_data(ttl=300, show_spinner=False)
+def download_sniper_chunk(tickers):
+    """Cache daily bars so dashboard reruns do not hit Yahoo Finance repeatedly."""
+    return yf.download(
+        list(tickers),
+        period="6mo",
+        group_by='ticker',
+        threads=True,
+        progress=False,
+    )
+
 def train_xgboost_sniper(df):
     """Train the short-horizon model without treating unavailable future data as a loss."""
     try:
@@ -548,8 +559,10 @@ def train_xgboost_sniper(df):
         if len(X) < 60 or y.nunique() < 2: return 0.0, 0.0
 
         split = min(max(int(len(X) * 0.8), 40), len(X) - 10)
+        positive_count = max(1, int(y.iloc[:split].sum()))
+        negative_count = max(1, int(len(y.iloc[:split]) - y.iloc[:split].sum()))
         model = xgb.XGBClassifier(
-            n_estimators=200,
+            n_estimators=120,
             learning_rate=0.03,
             max_depth=5,
             subsample=0.75,
@@ -558,10 +571,11 @@ def train_xgboost_sniper(df):
             gamma=0.15,
             reg_alpha=0.1,
             reg_lambda=1.5,
-            scale_pos_weight=2,
+            scale_pos_weight=min(5.0, negative_count / positive_count),
             random_state=42,
             eval_metric='logloss',
-            use_label_encoder=False,
+            tree_method='hist',
+            n_jobs=2,
         )
         model.fit(
             X.iloc[:split], y.iloc[:split],
@@ -603,7 +617,7 @@ def run_sniper_engine_full(tickers_to_scan, progress_placeholder=None):
             """, unsafe_allow_html=True)
             
         try:
-            bulk_data = yf.download(chunk, period="6mo", group_by='ticker', threads=False, progress=False)
+            bulk_data = download_sniper_chunk(tuple(chunk))
             for ticker in chunk:
                 try:
                     if len(chunk) > 1 and isinstance(bulk_data.columns, pd.MultiIndex):
@@ -1046,7 +1060,7 @@ def train_xgboost_model(ticker, period="5y"):
             min_child_weight=3, gamma=0.1,
             reg_alpha=0.05, reg_lambda=1.2,
             random_state=42, eval_metric='logloss',
-            use_label_encoder=False
+            tree_method='hist', n_jobs=2
         )
         model.fit(X.iloc[:split], y.iloc[:split], verbose=False)
         acc = accuracy_score(y.iloc[split:], model.predict(X.iloc[split:])) if split < len(X) else 0.0
@@ -1092,7 +1106,7 @@ def massive_ml_ranking(tickers, top_limit=60):
                         subsample=0.8, colsample_bytree=0.75,
                         min_child_weight=3, gamma=0.1,
                         random_state=42, eval_metric='logloss',
-                        use_label_encoder=False
+                        tree_method='hist', n_jobs=2
                     )
                     model.fit(X.iloc[:split], y.iloc[:split], verbose=False)
                     acc = accuracy_score(y.iloc[split:], model.predict(X.iloc[split:])) if split < len(X) else 0.0
@@ -1182,7 +1196,8 @@ def train_xgboost_from_df(df_input):
             reg_lambda=1.2,
             random_state=42,
             eval_metric='logloss',
-            use_label_encoder=False,
+            tree_method='hist',
+            n_jobs=2,
         )
         model.fit(
             X.iloc[:split], y.iloc[:split],
