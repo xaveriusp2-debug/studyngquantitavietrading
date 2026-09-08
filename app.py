@@ -309,6 +309,8 @@ if 'sniper_auto_enabled' not in st.session_state:
     st.session_state['sniper_auto_enabled'] = False
 if 'sniper_last_auto_cycle' not in st.session_state:
     st.session_state['sniper_last_auto_cycle'] = -1
+if 'sniper_last_auto_scan_time' not in st.session_state:
+    st.session_state['sniper_last_auto_scan_time'] = 0.0
 if 'sniper_previous_tickers' not in st.session_state:
     st.session_state['sniper_previous_tickers'] = set()
 
@@ -584,7 +586,7 @@ def run_sniper_engine_full(tickers_to_scan, progress_placeholder=None):
         'accepted': 0,
         'errors': 0,
     }
-    chunk_size = 15
+    chunk_size = 50
     chunks = [tickers_to_scan[i:i + chunk_size] for i in range(0, len(tickers_to_scan), chunk_size)]
     total_chunks = len(chunks)
     
@@ -2396,6 +2398,7 @@ with tab6:
     auto_scan_due = (
         auto_sniper_monitor
         and refresh_count != st.session_state['sniper_last_auto_cycle']
+        and (time.time() - st.session_state['sniper_last_auto_scan_time']) >= 300
     )
     if run_sniper_btn or auto_scan_due:
         sniper_universe = all_ihsg_universe[:max_stocks_sniper]
@@ -2408,6 +2411,7 @@ with tab6:
             sniper_loader.empty()
         st.session_state['sniper_results'] = sniper_results_raw
         st.session_state['sniper_last_auto_cycle'] = refresh_count
+        st.session_state['sniper_last_auto_scan_time'] = time.time()
 
         current_tickers = {item['Ticker'] for item in sniper_results_raw}
         new_tickers = sorted(current_tickers - st.session_state['sniper_previous_tickers'])
