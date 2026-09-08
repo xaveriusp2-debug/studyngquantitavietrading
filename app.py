@@ -315,6 +315,8 @@ if 'sniper_last_auto_error' not in st.session_state:
     st.session_state['sniper_last_auto_error'] = ''
 if 'sniper_previous_tickers' not in st.session_state:
     st.session_state['sniper_previous_tickers'] = set()
+if 'watchlist_live_data' not in st.session_state:
+    st.session_state['watchlist_live_data'] = []
 
 # AUTO-REFRESH EXACTLY EVERY 15 SECONDS (PAUSED DURING ACTIVE SCREENER SCAN)
 if not st.session_state['is_scanning']:
@@ -1897,12 +1899,15 @@ with tab3:
         
         st.markdown("---")
         st.subheader("📊 Radar Intraday Pantauan Default (Watchlist)")
-        with st.spinner("⚡ Memuat Radar Intraday Pantauan Watchlist Default..."):
-            live_market_data = pull_live_data(WATCHLIST_1M)
-            if live_market_data:
-                df_display = pd.DataFrame(live_market_data)
-                df_table = df_display.drop(columns=['_raw_df'])
-                st.dataframe(df_table, use_container_width=True, hide_index=True)
+        if st.button("📡 Muat Radar Intraday Watchlist", key="load_watchlist_btn"):
+            with st.spinner("⚡ Memuat Radar Intraday Pantauan Watchlist Default..."):
+                st.session_state['watchlist_live_data'] = pull_live_data(WATCHLIST_1M)
+        if st.session_state['watchlist_live_data']:
+            df_display = pd.DataFrame(st.session_state['watchlist_live_data'])
+            df_table = df_display.drop(columns=['_raw_df'])
+            st.dataframe(df_table, use_container_width=True, hide_index=True)
+        else:
+            st.caption("Radar watchlist belum dimuat. Klik tombol di atas saat membutuhkan data intraday.")
 
 # ==========================================
 # TAB 4: DESK MAKRO-MIKRO & RISK-ON / RISK-OFF RANKING
