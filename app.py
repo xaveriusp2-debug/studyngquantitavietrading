@@ -1736,9 +1736,7 @@ with tab1:
                 
     with col_b:
         if st.session_state['live_signals'].empty:
-            st.session_state['live_signals'] = run_screener_engine_full(
-                capital_input, all_ihsg_universe, macro_info, adaptive_config
-            )
+            st.info("Belum ada hasil screener. Klik **PINDAI PASAR RADAR MULTI-TIMEFRAME** untuk memulai pemindaian.")
             
         if not st.session_state['live_signals'].empty:
             df_sig_disp = st.session_state['live_signals']
