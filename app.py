@@ -532,7 +532,7 @@ _SNIPER_FEATURE_COLS = [
     'ATR_Ratio',
 ]
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def download_sniper_chunk(tickers):
     """Cache daily bars so dashboard reruns do not hit Yahoo Finance repeatedly."""
     return yf.download(
