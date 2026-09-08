@@ -311,6 +311,8 @@ if 'sniper_last_auto_cycle' not in st.session_state:
     st.session_state['sniper_last_auto_cycle'] = -1
 if 'sniper_last_auto_scan_time' not in st.session_state:
     st.session_state['sniper_last_auto_scan_time'] = 0.0
+if 'sniper_last_auto_error' not in st.session_state:
+    st.session_state['sniper_last_auto_error'] = ''
 if 'sniper_previous_tickers' not in st.session_state:
     st.session_state['sniper_previous_tickers'] = set()
 
@@ -2398,7 +2400,7 @@ with tab6:
     auto_scan_due = (
         auto_sniper_monitor
         and refresh_count != st.session_state['sniper_last_auto_cycle']
-        and (time.time() - st.session_state['sniper_last_auto_scan_time']) >= 300
+        and (time.time() - st.session_state['sniper_last_auto_scan_time']) >= 60
     )
     if run_sniper_btn or auto_scan_due:
         sniper_universe = all_ihsg_universe[:max_stocks_sniper]
@@ -2406,6 +2408,11 @@ with tab6:
         st.session_state['is_scanning'] = True
         try:
             sniper_results_raw = run_sniper_engine_full(sniper_universe, progress_placeholder=sniper_loader)
+            st.session_state['sniper_last_auto_error'] = ''
+        except Exception as scan_error:
+            logging.exception("Automatic Sniper scan failed: %s", scan_error)
+            sniper_results_raw = st.session_state.get('sniper_results', [])
+            st.session_state['sniper_last_auto_error'] = str(scan_error)
         finally:
             st.session_state['is_scanning'] = False
             sniper_loader.empty()
@@ -2455,6 +2462,12 @@ with tab6:
 
         if run_sniper_btn and auto_deploy_sniper:
             st.rerun()
+
+    if st.session_state.get('sniper_last_auto_error'):
+        st.error(
+            "Sniper gagal memperbarui data. Hasil scan sebelumnya tetap ditampilkan. "
+            f"Detail: {st.session_state['sniper_last_auto_error']}"
+        )
 
     sniper_results = st.session_state.get('sniper_results', [])
 
