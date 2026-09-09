@@ -2516,6 +2516,14 @@ with tab6:
         )
 
     sniper_results = st.session_state.get('sniper_results', [])
+    # Migrate results from a previous session before rendering the new OOS fields.
+    for result in sniper_results:
+        if 'Presisi OOS (%)' not in result:
+            result['Presisi OOS (%)'] = result.get('Validasi Model (%)', 0.0)
+        if 'Calibration Error' not in result:
+            result['Calibration Error'] = None
+        if 'Sampel Validasi' not in result:
+            result['Sampel Validasi'] = 0
 
     # ── RESULTS DASHBOARD ────────────────────────────────────────────────────
     if not sniper_results:
@@ -2617,7 +2625,7 @@ with tab6:
                             
                             <div style="margin-bottom:10px;">
                                 <span class="sniper-stat-pill pill-green">🏆 WIN {win_p:.1f}%</span>
-                                <span class="sniper-stat-pill pill-purple">📐 OOS {s['Presisi OOS (%)']:.1f}%</span>
+                                <span class="sniper-stat-pill pill-purple">📐 OOS {float(s.get('Presisi OOS (%)', 0.0)):.1f}%</span>
                                 <span class="sniper-stat-pill pill-yellow">🛡 RISK {s['Risk (%)']:.2f}%</span>
                                 <span class="sniper-stat-pill pill-blue">💡 EV {ev_p:+.2f}%</span>
                             </div>
