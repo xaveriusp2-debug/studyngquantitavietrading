@@ -2605,46 +2605,39 @@ with tab6:
                     upside_pct = ((tp_px - current_px) / current_px * 100) if current_px > 0 else 0
                     downside_pct = ((current_px - sl_px) / current_px * 100) if current_px > 0 else 0
                     
-                    # Risk color for EV
-                    ev_color = "#10B981" if ev_p > 0 else "#EF4444"
                     rank_badge = f"#{sidx+1}"
                     
                     with col_x:
                         st.markdown(f"""
-                        <div class="sniper-candidate-card">
-                            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                        <div class="sniper-candidate-card" style="padding:14px 16px; margin-bottom:12px;">
+                            <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;'>
                                 <div>
-                                    <span style="font-size:1.3rem; font-weight:800; color:#F8FAFC;">{ticker_raw}</span>
-                                    <span style="margin-left:8px; background:#0F172A; color:#94A3B8; padding:2px 8px; border-radius:6px; font-size:0.72rem;">{rank_badge} RANK</span>
+                                    <span style="font-size:1.15rem; font-weight:800; color:#F8FAFC;">{ticker_raw}</span>
+                                    <span style="margin-left:6px; color:#64748B; font-size:0.7rem;">{rank_badge}</span>
                                 </div>
-                                <div style="text-align:right;">
-                                    <div style="font-size:1.1rem; font-weight:700; color:#38BDF8; font-family:'JetBrains Mono',monospace;">Rp {current_px:,.0f}</div>
-                                    <div style="font-size:0.72rem; color:#64748B;">Harga Saat Ini</div>
+                                <div style="font-size:1rem; font-weight:700; color:#38BDF8; font-family:'JetBrains Mono',monospace;">Rp {current_px:,.0f}</div>
+                            </div>
+                            
+                            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; color:#CBD5E1; font-size:0.72rem;">
+                                <span>WIN <b style="color:#10B981;">{win_p:.1f}%</b></span>
+                                <span>OOS <b style="color:#A855F7;">{float(s.get('Presisi OOS (%)', 0.0)):.1f}%</b></span>
+                                <span>RISK <b style="color:#F59E0B;">{s['Risk (%)']:.2f}%</b></span>
+                                <span>EV <b style="color:#38BDF8;">{ev_p:+.2f}%</b></span>
+                            </div>
+                            
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px;">
+                                <div style="border-left:2px solid #10B981; padding:5px 8px;">
+                                    <div style="color:#10B981; font-weight:700; font-size:0.9rem; font-family:'JetBrains Mono',monospace;">TP Rp {tp_px:,.0f}</div>
+                                    <div style="color:#6EE7B7; font-size:0.68rem;">+{upside_pct:.1f}% · {tp_basis}</div>
+                                </div>
+                                <div style="border-left:2px solid #EF4444; padding:5px 8px;">
+                                    <div style="color:#EF4444; font-weight:700; font-size:0.9rem; font-family:'JetBrains Mono',monospace;">SL Rp {sl_px:,.0f}</div>
+                                    <div style="color:#FCA5A5; font-size:0.68rem;">-{downside_pct:.1f}% · Support {breakdown_level:,.0f}</div>
                                 </div>
                             </div>
                             
-                            <div style="margin-bottom:10px;">
-                                <span class="sniper-stat-pill pill-green">🏆 WIN {win_p:.1f}%</span>
-                                <span class="sniper-stat-pill pill-purple">📐 OOS {float(s.get('Presisi OOS (%)', 0.0)):.1f}%</span>
-                                <span class="sniper-stat-pill pill-yellow">🛡 RISK {s['Risk (%)']:.2f}%</span>
-                                <span class="sniper-stat-pill pill-blue">💡 EV {ev_p:+.2f}%</span>
-                            </div>
-                            
-                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;">
-                                <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.3); border-radius:8px; padding:10px; text-align:center;">
-                                    <div style="color:#10B981; font-weight:700; font-size:1rem; font-family:'JetBrains Mono',monospace;">Rp {tp_px:,.0f}</div>
-                                    <div style="color:#6EE7B7; font-size:0.72rem; margin-top:2px;">🎯 Target TP (+{upside_pct:.1f}%)</div>
-                                </div>
-                                <div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.3); border-radius:8px; padding:10px; text-align:center;">
-                                    <div style="color:#EF4444; font-weight:700; font-size:1rem; font-family:'JetBrains Mono',monospace;">Rp {sl_px:,.0f}</div>
-                                    <div style="color:#FCA5A5; font-size:0.72rem; margin-top:2px;">🛡 Cut Loss (-{downside_pct:.1f}%)</div>
-                                </div>
-                            </div>
-                            
-                            <div style="margin-top:10px; padding:8px; background:rgba(15,23,42,0.6); border-radius:6px; font-size:0.75rem; color:#94A3B8;">
-                                🎯 <b style="color:#10B981;">Basis TP: {tp_basis}</b><br>
-                                🧱 Support breakdown: <b style="color:#F59E0B;">Rp {breakdown_level:,.0f}</b> ({breakdown_signal})<br>
-                                ⏱ <b style="color:#38BDF8;">Max Hold: 3–4 Hari</b> &nbsp;|&nbsp; Exit bila support tertembus dan tekanan berlanjut
+                            <div style="margin-top:7px; color:#94A3B8; font-size:0.68rem;">
+                                {breakdown_signal} · Hold maksimal 3–4 hari
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
