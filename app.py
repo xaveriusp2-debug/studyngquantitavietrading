@@ -534,12 +534,12 @@ _SNIPER_FEATURE_COLS = [
     'ATR_Ratio',
 ]
 
-@st.cache_data(ttl=60, show_spinner=False)
-def download_sniper_chunk(tickers):
-    """Cache daily bars so dashboard reruns do not hit Yahoo Finance repeatedly."""
+@st.cache_data(ttl=3600, show_spinner=False)
+def download_sniper_chunk(tickers, history_period='6mo'):
+    """Cache daily bars for the selected lookback period."""
     return yf.download(
         list(tickers),
-        period="6mo",
+        period=history_period,
         group_by='ticker',
         threads=True,
         progress=False,
@@ -595,7 +595,7 @@ def train_xgboost_sniper(df):
         logging.debug("Sniper model failed: %s", e)
         return 0.0, 0.0, 1.0, 0
 
-def run_sniper_engine_full(tickers_to_scan, progress_placeholder=None, macro_info=None, regime_label=''):
+def run_sniper_engine_full(tickers_to_scan, progress_placeholder=None, macro_info=None, regime_label='', history_period='6mo'):
     sniper_candidates = []
     scan_stats = {
         'total': len(tickers_to_scan),
@@ -633,7 +633,7 @@ def run_sniper_engine_full(tickers_to_scan, progress_placeholder=None, macro_inf
             """, unsafe_allow_html=True)
             
         try:
-            bulk_data = download_sniper_chunk(tuple(chunk))
+            bulk_data = download_sniper_chunk(tuple(chunk), history_period=history_period)
             for ticker in chunk:
                 try:
                     if len(chunk) > 1 and isinstance(bulk_data.columns, pd.MultiIndex):
@@ -1119,7 +1119,7 @@ def train_xgboost_model(ticker, period="5y"):
         return None, None, 0.0, 0.0
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def massive_ml_ranking(tickers, top_limit=60):
+def massive_ml_ranking(tickers, top_limit=60, history_period='2y'):
     """Pemeringkatan ML 25-fitur seluruh universe BEI (cached harian)."""
     ml_results = []
     chunk_size = 50
@@ -1127,7 +1127,7 @@ def massive_ml_ranking(tickers, top_limit=60):
 
     for chunk in chunks:
         try:
-            bulk_data = yf.download(chunk, period="2y", group_by='ticker', threads=True, progress=False)
+            bulk_data = yf.download(chunk, period=history_period, group_by='ticker', threads=True, progress=False)
             for ticker in chunk:
                 try:
                     if len(chunk) > 1 and isinstance(bulk_data.columns, pd.MultiIndex):
@@ -1259,7 +1259,7 @@ def train_xgboost_from_df(df_input):
         return 0.70, 72.0
 
 # HIGH-PRECISION ACCURATE SCREENER ENGINE WITH RADAR PROGRESS & ORDERBOOK LIQUIDITY GUARD
-def run_screener_engine_full(capital, tickers_to_scan, macro_info, adaptive_config, progress_placeholder=None):
+def run_screener_engine_full(capital, tickers_to_scan, macro_info, adaptive_config, progress_placeholder=None, history_period='6mo'):
     buy_candidates = []
     chunk_size = 15
     chunks = [tickers_to_scan[i:i + chunk_size] for i in range(0, len(tickers_to_scan), chunk_size)]
@@ -1286,7 +1286,7 @@ def run_screener_engine_full(capital, tickers_to_scan, macro_info, adaptive_conf
             """, unsafe_allow_html=True)
             
         try:
-            bulk_data = yf.download(chunk, period="6mo", group_by='ticker', threads=False, progress=False)
+            bulk_data = yf.download(chunk, period=history_period, group_by='ticker', threads=False, progress=False)
             for ticker in chunk:
                 try:
                     if len(chunk) > 1 and isinstance(bulk_data.columns, pd.MultiIndex):
@@ -1742,6 +1742,12 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 all_ihsg_universe = load_universe()
+HISTORY_PERIOD_OPTIONS = {
+    '6 Bulan (cepat)': '6mo',
+    '2 Tahun': '2y',
+    '5 Tahun': '5y',
+    'Maksimum tersedia (sejak data emiten)': 'max',
+}
 
 # ==========================================
 # TAB 1: FITUR UTAMA SCREENER ADAPTIF (ACCURATE + ANIMATED RADAR SCANNER)
@@ -1766,6 +1772,13 @@ with tab1:
     col_a, col_b = st.columns([1, 3])
     with col_a:
         capital_input = st.number_input("Modal Trading (Rp):", min_value=1000000, value=1000000, step=1000000)
+        screener_history_label = st.selectbox(
+            "Histori data screener:",
+            list(HISTORY_PERIOD_OPTIONS),
+            index=1,
+            key="main_screener_history",
+            help="Pilih maksimum untuk memakai seluruh histori harian yang tersedia per emiten, termasuk data sejak sekitar 2000 bila tersedia."
+        )
         scan_button = st.button("🚀 PINDAI PASAR RADAR MULTI-TIMEFRAME", type="primary", use_container_width=True)
         if scan_button:
             st.session_state['is_scanning'] = True
@@ -1774,7 +1787,8 @@ with tab1:
             # RUN HIGH-PRECISION ACCURATE SCREENER WITH ANIMATED RADAR
             st.session_state['live_signals'] = run_screener_engine_full(
                 capital_input, all_ihsg_universe, macro_info, adaptive_config, 
-                progress_placeholder=loader_placeholder
+                progress_placeholder=loader_placeholder,
+                history_period=HISTORY_PERIOD_OPTIONS[screener_history_label]
             )
             
             loader_placeholder.empty()
@@ -1853,6 +1867,13 @@ with tab2:
     col_l1, col_l2 = st.columns([1, 3])
     with col_l1:
         top_limit_scan = st.slider("Jumlah Saham Dipindai:", min_value=20, max_value=200, value=50, step=10)
+        ml_history_label = st.selectbox(
+            "Histori training ML:",
+            list(HISTORY_PERIOD_OPTIONS),
+            index=1,
+            key="ml_history_period",
+            help="Data maksimum mengikuti histori yang tersedia Yahoo Finance untuk setiap ticker."
+        )
         if st.button("🚀 Jalankan Pemeringkatan ML Universe"):
             loader_l = st.empty()
             loader_l.markdown("""
@@ -1866,7 +1887,11 @@ with tab2:
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            st.session_state['ml_leaderboard'] = massive_ml_ranking(all_ihsg_universe, top_limit=top_limit_scan)
+            st.session_state['ml_leaderboard'] = massive_ml_ranking(
+                all_ihsg_universe,
+                top_limit=top_limit_scan,
+                history_period=HISTORY_PERIOD_OPTIONS[ml_history_label]
+            )
             loader_l.empty()
     with col_l2:
         if 'ml_leaderboard' in st.session_state and not st.session_state['ml_leaderboard'].empty:
@@ -2409,13 +2434,20 @@ with tab6:
 
     with ctrl_col1:
         max_stocks_sniper = st.number_input(
-            "Maks Saham Discan (chunk 15):",
+            "Maks Saham Discan (batch 50):",
             min_value=15, max_value=1000, value=900, step=15,
-            help="Setiap chunk memproses 15 saham. 900+ = scan seluruh universe IHSG yang tersedia."
+            help="Setiap batch memproses 50 saham. 900+ = scan seluruh universe IHSG yang tersedia."
         )
         sniper_capital = st.number_input(
             "Modal per Trade (Rp):",
             min_value=500000, value=5000000, step=500000
+        )
+        sniper_history_label = st.selectbox(
+            "Histori data Sniper:",
+            list(HISTORY_PERIOD_OPTIONS),
+            index=1,
+            key="sniper_history_period",
+            help="Pilih maksimum untuk membaca seluruh histori harian yang tersedia per saham."
         )
 
     with ctrl_col2:
@@ -2430,7 +2462,7 @@ with tab6:
             "🔔 Pantau otomatis & beri notifikasi sinyal baru",
             value=st.session_state['sniper_auto_enabled'],
             key="sniper_auto_enabled",
-            help="Scanner berjalan pada refresh otomatis 15 detik. Notifikasi hanya muncul untuk ticker yang baru memenuhi syarat."
+            help="Scanner berjalan pada refresh otomatis 60 detik. Notifikasi hanya muncul untuk ticker yang baru memenuhi syarat."
         )
         auto_deploy_sniper = st.checkbox(
             "⚡ Auto-Deploy ke Portofolio setelah scan",
@@ -2476,6 +2508,7 @@ with tab6:
                 progress_placeholder=sniper_loader,
                 macro_info=macro_info,
                 regime_label=hmm_label,
+                history_period=HISTORY_PERIOD_OPTIONS[sniper_history_label],
             )
             st.session_state['sniper_last_auto_error'] = ''
         except Exception as scan_error:
