@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import yfinance as yf
 import xgboost as xgb
 from hmmlearn.hmm import GaussianHMM
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, precision_score, brier_score_loss
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 import logging
@@ -546,7 +546,7 @@ def download_sniper_chunk(tickers):
     )
 
 def train_xgboost_sniper(df):
-    """Train the short-horizon model without treating unavailable future data as a loss."""
+    """Return conservative OOS precision, probability, and calibration error."""
     try:
         work_df = df.copy()
         close_s = work_df['Close'].squeeze()
@@ -558,7 +558,7 @@ def train_xgboost_sniper(df):
 
         avail_features = [c for c in _SNIPER_FEATURE_COLS if c in work_df.columns]
         X, y = work_df[avail_features].copy(), work_df['Target'].astype(int).copy()
-        if len(X) < 60 or y.nunique() < 2: return 0.0, 0.0
+        if len(X) < 80 or y.nunique() < 2: return 0.0, 0.0, 1.0, 0
 
         split = min(max(int(len(X) * 0.8), 40), len(X) - 10)
         positive_count = max(1, int(y.iloc[:split].sum()))
@@ -585,11 +585,15 @@ def train_xgboost_sniper(df):
             verbose=False
         )
         prob_buy = float(model.predict_proba(X.iloc[[-1]])[0][1]) * 100
-        validation_acc = accuracy_score(y.iloc[split:], model.predict(X.iloc[split:]))
-        return float(validation_acc), prob_buy
+        y_valid = y.iloc[split:]
+        valid_pred = model.predict(X.iloc[split:])
+        valid_prob = model.predict_proba(X.iloc[split:])[:, 1]
+        validation_precision = precision_score(y_valid, valid_pred, zero_division=0)
+        calibration_error = brier_score_loss(y_valid, valid_prob)
+        return float(validation_precision), prob_buy, float(calibration_error), int(len(y_valid))
     except Exception as e:
         logging.debug("Sniper model failed: %s", e)
-        return 0.0, 0.0
+        return 0.0, 0.0, 1.0, 0
 
 def run_sniper_engine_full(tickers_to_scan, progress_placeholder=None):
     sniper_candidates = []
@@ -653,7 +657,7 @@ def run_sniper_engine_full(tickers_to_scan, progress_placeholder=None):
                         scan_stats['momentum'] += 1
                         continue
 
-                    validation_acc, ml_raw_prob = train_xgboost_sniper(df)
+                    validation_precision, ml_raw_prob, calibration_error, validation_samples = train_xgboost_sniper(df)
                     rsi_val = float(df['RSI_14'].iloc[-1])
                     macd_hist = float(df['MACD_Hist'].iloc[-1])
                     bb_pct = float(df['BB_Pct'].iloc[-1])
@@ -672,14 +676,16 @@ def run_sniper_engine_full(tickers_to_scan, progress_placeholder=None):
                         not_overextended,
                     ])
                     
-                    if ml_raw_prob < 62.0 or validation_acc < 0.55:
+                    # A 90% claim is only allowed when the chronological holdout
+                    # actually demonstrates >=90% precision with enough samples.
+                    if validation_samples < 15 or validation_precision < 0.90 or calibration_error > 0.20:
                         scan_stats['model'] += 1
                         continue
                     if confluence < 4:
                         scan_stats['confluence'] += 1
                         continue
 
-                    if ml_raw_prob >= 62.0 and validation_acc >= 0.55 and confluence >= 4:
+                    if validation_precision >= 0.90 and confluence >= 4:
                         atr = float(df['ATR_14'].iloc[-1]) if (not np.isnan(df['ATR_14'].iloc[-1])) else last_close * 0.02
                         sup_20d = float(df['Support_Terendah_20D'].iloc[-1]) if not pd.isna(df['Support_Terendah_20D'].iloc[-1]) else last_close * 0.96
 
@@ -706,9 +712,10 @@ def run_sniper_engine_full(tickers_to_scan, progress_placeholder=None):
                         tp_price = max(tp_price, round(last_close + atr, 0))
                         potential_reward = max(1.0, tp_price - last_close)
 
-                        ev = ( (ml_raw_prob/100) * potential_reward ) - ( ((100-ml_raw_prob)/100) * potential_risk )
+                        effective_prob = min(ml_raw_prob, validation_precision * 100)
+                        ev = ( (effective_prob/100) * potential_reward ) - ( ((100-effective_prob)/100) * potential_risk )
                         ev_pct = (ev / last_close) * 100
-                        setup_score = min(100.0, (ml_raw_prob * 0.55) + (validation_acc * 100 * 0.20) + (confluence / 5 * 25))
+                        setup_score = min(100.0, (effective_prob * 0.45) + (validation_precision * 100 * 0.30) + (confluence / 5 * 25))
                         
                         sniper_candidates.append({
                             'Ticker': ticker,
@@ -719,8 +726,10 @@ def run_sniper_engine_full(tickers_to_scan, progress_placeholder=None):
                             'Level Support Breakdown': round(structural_support, 0),
                             'Sinyal Breakdown': 'Waspada jika close menembus support' if last_close <= structural_support * 1.02 else 'Support masih bertahan',
                             'Setup Score': round(setup_score, 1),
-                            'Win Prob (%)': round(ml_raw_prob, 1),
-                            'Validasi Model (%)': round(validation_acc * 100, 1),
+                            'Win Prob (%)': round(effective_prob, 1),
+                            'Presisi OOS (%)': round(validation_precision * 100, 1),
+                            'Calibration Error': round(calibration_error, 4),
+                            'Sampel Validasi': validation_samples,
                             'Konfluensi': f"{confluence}/5",
                             'Risk (%)': round((potential_risk / last_close) * 100, 2),
                             'Expectancy Value (%)': round(ev_pct, 2)
@@ -2372,7 +2381,7 @@ with tab6:
         </h2>
         <p style="margin:0; color:#FDE68A; font-size:0.88rem; line-height:1.6;">
             Algoritma multi-layer: <b>XGBoost ML (Target 3-day +4%)</b> · <b>RSI Momentum Filter</b> · <b>Volume Surge Guard</b> · <b>ATR Dynamic SL</b>
-            <br>Filter: <b>ML ≥ 62% + validasi ≥ 55% + konfluensi ≥ 4/5</b> &nbsp;|&nbsp; Risk budget: <b>0,5% per trade</b> &nbsp;|&nbsp; Universe: <b>Semua Saham BEI</b>
+            <br>Filter: <b>Presisi OOS ≥ 90% + calibration error ≤ 0,20 + konfluensi ≥ 4/5</b> &nbsp;|&nbsp; Risk budget: <b>0,5% per trade</b> &nbsp;|&nbsp; Universe: <b>Semua Saham BEI</b>
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -2416,7 +2425,7 @@ with tab6:
         <div style="background:rgba(30,41,59,0.7); border:1px solid #334155; border-radius:10px; padding:14px 18px;">
             <div style="color:#94A3B8; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:8px;">📐 PARAMETER SISTEM SNIPER</div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-                <div style="color:#F8FAFC; font-size:0.82rem;">🎯 Min Win Prob</div><div style="color:#10B981; font-weight:700; font-size:0.82rem;">≥ 62%</div>
+                <div style="color:#F8FAFC; font-size:0.82rem;">🎯 Presisi OOS</div><div style="color:#10B981; font-weight:700; font-size:0.82rem;">≥ 90%</div>
                 <div style="color:#F8FAFC; font-size:0.82rem;">🧮 Setup Score</div><div style="color:#F59E0B; font-weight:700; font-size:0.82rem;">ML + Konfluensi</div>
                 <div style="color:#F8FAFC; font-size:0.82rem;">⏱ Max Hold</div><div style="color:#38BDF8; font-weight:700; font-size:0.82rem;">3–4 Hari</div>
                 <div style="color:#F8FAFC; font-size:0.82rem;">🛡 Risk Budget</div><div style="color:#A855F7; font-weight:700; font-size:0.82rem;">0.5% / Trade</div>
@@ -2517,7 +2526,7 @@ with tab6:
                 <div style="font-size:3rem; margin-bottom:12px;">🎯</div>
                 <div style="font-size:1.1rem; font-weight:700; color:#CBD5E1; margin-bottom:8px;">Scanner Belum Dijalankan</div>
                 <div style="font-size:0.85rem;">Klik tombol <b>AKTIFKAN SNIPER SCANNER</b> di atas untuk memulai pemindaian saham<br>
-                dengan validasi model dan konfluensi teknikal ≥ 4/5.</div>
+                dengan presisi out-of-sample ≥ 90%, calibration error ≤ 0,20, dan konfluensi teknikal ≥ 4/5.</div>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -2551,7 +2560,7 @@ with tab6:
 
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         kpi1.metric("🎯 Kandidat Sniper", f"{total_candidates} Saham", delta="Konfluensi ≥ 4/5")
-        kpi2.metric("🏆 Avg Win Probability", f"{avg_winprob:.1f}%", delta="vs threshold 62%")
+        kpi2.metric("🏆 Avg Win Probability", f"{avg_winprob:.1f}%", delta="conservative estimate")
         kpi3.metric("💰 Avg Expectancy Value", f"{avg_ev:.2f}%", delta="Per Trade")
         kpi4.metric("🛡 Avg Risk", f"{avg_risk:.2f}%", delta="Per trade")
 
@@ -2608,6 +2617,7 @@ with tab6:
                             
                             <div style="margin-bottom:10px;">
                                 <span class="sniper-stat-pill pill-green">🏆 WIN {win_p:.1f}%</span>
+                                <span class="sniper-stat-pill pill-purple">📐 OOS {s['Presisi OOS (%)']:.1f}%</span>
                                 <span class="sniper-stat-pill pill-yellow">🛡 RISK {s['Risk (%)']:.2f}%</span>
                                 <span class="sniper-stat-pill pill-blue">💡 EV {ev_p:+.2f}%</span>
                             </div>
@@ -2848,7 +2858,7 @@ with tab6:
             - **Target Label**: `1` jika harga naik **+4% atau lebih dalam 3 hari ke depan**, `0` jika tidak.
             - Train/Test Split: **80% train / 20% test** (walk-forward approach).
             - Model hyperparameters: `n_estimators=100`, `lr=0.05`, `max_depth=4`, `subsample=0.8`.
-            - Kandidat wajib memiliki **prediksi ML ≥ 62%**, validasi out-of-sample ≥ 55%, dan konfluensi teknikal minimal 4/5.
+            - Kandidat wajib memiliki **presisi out-of-sample ≥ 90%**, calibration error ≤ 0,20, minimal 15 sampel validasi, dan konfluensi teknikal minimal 4/5.
 
             #### 4. 🛡 Risk Management
             - **Stop Loss**: kombinasi support 20 hari, ATR, dan batas maksimum risiko 6% dari entry.
